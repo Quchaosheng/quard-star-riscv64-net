@@ -1,0 +1,20 @@
+[submodule "third_party/qemu"]
+	path = third_party/qemu
+	url = https://gitlab.com/qemu-project/qemu.git
+	shallow = true
+[submodule "third_party/opensbi"]
+	path = third_party/opensbi
+	url = https://github.com/riscv-software-src/opensbi.git
+	shallow = true
+[submodule "third_party/freertos"]
+	path = third_party/freertos
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+	shallow = true
+[submodule "third_party/dtc"]
+	path = third_party/dtc
+	url = https://git.kernel.org/pub/scm/utils/dtc/dtc.git
+	shallow = true
+[submodule "third_party/nanoprintf"]
+	path = third_party/nanoprintf
+	url = https://github.com/charlesnicholson/nanoprintf.git
+	shallow = true
