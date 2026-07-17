@@ -30,6 +30,28 @@ static struct disk
     struct virtio_blk_req ops[NUM];
 }__attribute__((aligned(PAGE_SIZE))) disk;
 
+void virtio_disk_smoke_test()
+{
+    static struct buf b;
+
+    b.blockno = 1;
+    for (int i = 0; i < BSIZE; i++)
+        b.data[i] = (char)(i ^ 0x5a);
+
+    virtio_disk_rw(&b, 1);
+    memset(b.data, 0, BSIZE);
+    virtio_disk_rw(&b, 0);
+
+    for (int i = 0; i < BSIZE; i++) {
+        if ((u8)b.data[i] != (u8)(i ^ 0x5a)) {
+            printk("QS:TEST_FAIL:block-readback\n");
+            panic("virtio disk smoke test");
+        }
+    }
+
+    printk("QS:BLOCK_OK\n");
+}
+
 void virtio_disk_init(){
 
     u32 status = 0;
@@ -94,6 +116,8 @@ void virtio_disk_init(){
 	disk.avail = (struct virtq_avail *)(disk.pages +
 					    NUM * sizeof(struct virtq_desc));
 	disk.used = (struct virtq_used *)(disk.pages + PAGE_SIZE);
+	*VTMO_REG(VIRTIO_MMIO_QUEUE_ALIGN) = PAGE_SIZE;
+	*VTMO_REG(VIRTIO_MMIO_QUEUE_PFN) = (u32)((u64)disk.pages >> PAGE_SIZE_BITS);
 
 	// all NUM descriptors start out unused.
 	for (int i = 0; i < NUM; i++)

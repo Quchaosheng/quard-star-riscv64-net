@@ -98,6 +98,7 @@ PageTableEntry* find_pte(PageTable* pt, VirtPageNum vpn);
 VirtAddr virt_addr_from_size_t(uint64_t v);
 PhysAddr phys_addr_from_size_t(uint64_t v);
 PhysAddr phys_addr_from_phys_page_num(PhysPageNum ppn);
+PhysPageNum floor_phys(PhysAddr phys_addr);
 VirtPageNum virt_page_num_from_virt_addr(VirtAddr virt_addr);
 VirtPageNum virt_page_num_from_size_t(uint64_t v);
 VirtPageNum floor_virts(VirtAddr virt_addr);

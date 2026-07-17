@@ -3,19 +3,24 @@
 #define MAX_USER_STR 128
 #define WRITE_CHUNK  128
 
-static char *translate_user_ptr(const char *uaddr)
+static char *translate_user_ptr(const char *uaddr, u64 required)
 {
 	if (uaddr == 0) {
 		return 0;
 	}
+	u64 start_va = (u64)(uintptr_t)uaddr;
+	if (start_va >= MAXVA) {
+		return 0;
+	}
+
 	u64 user_satp = current_user_token();
 	PageTable pt;
 	pt.root_ppn.value = MAKE_PAGETABLE(user_satp);
 
-	u64 start_va = (u64)uaddr;
 	VirtPageNum vpn = floor_virts(virt_addr_from_size_t(start_va));
 	PageTableEntry* pte = find_pte(&pt, vpn);
-	if (pte == 0 || (pte->bits & (PTE_V | PTE_U)) != (PTE_V | PTE_U)) {
+	u64 flags = PTE_V | PTE_U | required;
+	if (pte == 0 || (pte->bits & flags) != flags) {
 		return 0;
 	}
 
@@ -28,7 +33,7 @@ static int copy_from_user(void *dst, const char *src, size_t len)
 {
 	char *d = (char*)dst;
 	for (size_t i = 0; i < len; i++) {
-		char *p = translate_user_ptr(src + i);
+		char *p = translate_user_ptr(src + i, PTE_R);
 		if (p == 0) {
 			return -1;
 		}
@@ -41,7 +46,7 @@ static int copy_to_user(char *dst, const void *src, size_t len)
 {
 	const char *s = (const char*)src;
 	for (size_t i = 0; i < len; i++) {
-		char *p = translate_user_ptr(dst + i);
+		char *p = translate_user_ptr(dst + i, PTE_W);
 		if (p == 0) {
 			return -1;
 		}
@@ -56,7 +61,7 @@ static int copy_user_cstr(char *dst, size_t max, const char *src)
 		return -1;
 	}
 	for (size_t i = 0; i < max - 1; i++) {
-		char *p = translate_user_ptr(src + i);
+		char *p = translate_user_ptr(src + i, PTE_R);
 		if (p == 0) {
 			return -1;
 		}
@@ -151,7 +156,7 @@ int __sys_wait()
 	return wait();
 }
 
-int __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
+reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 {
 	switch (syscall_id) {
 	case __NR_write:
