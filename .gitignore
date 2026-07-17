@@ -12,6 +12,11 @@
 *.lst
 *.log
 *.img
+*.d
+*.out
 *.pcap
 *.swp
 *~
+/kernel/src/link_app.S
+/trusted/build/
+/user/bin/
