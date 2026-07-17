@@ -26,6 +26,5 @@ void timer_init()
 /* 以us为单位返回时间 */
 uint64_t get_time_us()
 {
-    reg_t time =  r_mtime() / (CLOCK_FREQ / TICKS_PER_SEC);
-    return time;
+    return r_mtime() / (CLOCK_FREQ / 1000000ULL);
 }

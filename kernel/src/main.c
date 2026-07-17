@@ -10,6 +10,7 @@ void os_main()
    kvminit();
    //初始化磁盘
    virtio_disk_init();
+   virtio_disk_smoke_test();
    //初始化进程
    procinit();
    //加载initproc进程

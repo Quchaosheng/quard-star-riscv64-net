@@ -10,7 +10,9 @@ Produce a reproducible single-hart firmware baseline for the quard-star machine 
 - Keep QEMU, OpenSBI, and FreeRTOS-Kernel submodules clean and out of the migrated source tree.
 - Build a kernel image and a trusted-domain image with the RISC-V bare-metal toolchain.
 - Build a combined firmware image and run a bounded one-hart QEMU smoke test.
-- Emit stable markers `QS:BOOT_OK`, `QS:KERNEL_READY`, and `QS:TEST_PASS:m1-smoke`.
+- Enforce user-page read/write permissions, preserve 64-bit microsecond syscall results, and release per-process trap frames.
+- Register the VirtIO MMIO v1 queue and verify a real block write/read round trip.
+- Emit stable markers `QS:BOOT_OK`, `QS:KERNEL_READY`, `QS:BLOCK_OK`, and `QS:TEST_PASS:m1-smoke`.
 
 ## Non-goals
 
@@ -26,5 +28,6 @@ The legacy QEMU and OpenSBI trees are used only as comparison inputs. The quard-
 
 1. `make m1-build` succeeds on Ubuntu 24.04 or 26.04 with the checked environment.
 2. `make m1-smoke` starts `qemu-system-riscv64` headless for at most 20 seconds.
-3. The serial log contains all three required markers and no `QS:TEST_FAIL` marker.
+3. The serial log contains all four required markers and no `QS:TEST_FAIL` marker.
 4. The test exits non-zero on timeout, missing marker, or QEMU failure.
+5. Host contracts reject missing user permissions, truncated time results, leaked trap frames, unregistered VirtIO queues, or writable executable ELF segments.
