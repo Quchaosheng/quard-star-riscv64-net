@@ -12,6 +12,7 @@ combined=$out/qemu.log
 has_success_markers() {
   grep -q 'QS:BOOT_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:KERNEL_READY' "$combined" 2>/dev/null &&
+    grep -q 'QS:BLOCK_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:TEST_PASS:m1-smoke' "$combined" 2>/dev/null
 }
 
@@ -63,7 +64,7 @@ elif has_success_markers; then
 fi
 
 if [ "$success" -ne 1 ]; then
-  for marker in QS:BOOT_OK QS:KERNEL_READY QS:TEST_PASS:m1-smoke; do
+  for marker in QS:BOOT_OK QS:KERNEL_READY QS:BLOCK_OK QS:TEST_PASS:m1-smoke; do
     grep -q "$marker" "$combined" 2>/dev/null || echo "error: missing $marker" >&2
   done
   cat "$qemu_log" >&2

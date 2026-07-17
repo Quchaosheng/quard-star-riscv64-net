@@ -105,6 +105,7 @@ struct virtio_blk_req {
 
 // 初始化virtio
 void virtio_disk_init();
+void virtio_disk_smoke_test();
 
 // 磁盘读写
 void virtio_disk_rw(struct buf *, int );

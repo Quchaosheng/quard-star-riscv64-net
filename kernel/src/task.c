@@ -298,6 +298,10 @@ int exec(const char* name)
 void freeproc(struct TaskControlBlock* p)
 {
     proc_freepagetable(&p->pagetable, p->base_size);
+    if (p->trap_cx_ppn != 0) {
+      kfree(floor_phys(phys_addr_from_size_t(p->trap_cx_ppn)));
+      p->trap_cx_ppn = 0;
+    }
 
     p->pagetable.root_ppn.value = 0;
     p->base_size = 0;

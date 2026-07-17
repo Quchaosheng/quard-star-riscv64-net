@@ -74,7 +74,7 @@ void trap_handler()
 	switch (cause_code) {
 	case EXC_U_ECALL: {
 		cx->sepc += 4;
-		int result = __SYSCALL(cx->a7, cx->a0, cx->a1, cx->a2);
+		reg_t result = __SYSCALL(cx->a7, cx->a0, cx->a1, cx->a2);
 		cx = (TrapContext*)get_current_trap_cx();
 		cx->a0 = result;
 		break;

@@ -14,6 +14,7 @@ test-host:
 	./tests/host/test_m0_scripts.sh
 	./tests/host/test_m1_smoke_script.sh
 	./tests/host/test_m1_dts.sh
+	./tests/host/test_m1_kernel_contracts.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
