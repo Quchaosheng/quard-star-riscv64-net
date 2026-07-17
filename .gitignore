@@ -1,0 +1,17 @@
+/out/
+/build/
+/.cache/
+/.vscode/
+/.worktrees/
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.log
+*.img
+*.pcap
+*.swp
+*~
