@@ -1,0 +1,8 @@
+quard-star-riscv64-kernel=641f42560999ab00ad7ba01169cb2b3d723d8c48
+platform/quard-star/boot=boot
+platform/quard-star/dts=dts
+kernel=os/include,os/lib,os/src (except generated link_app.S),os/build.c,os/gdbinit,os/Makefile,os/os.ld
+user=os/user
+trusted=trusted_domain excluding trusted_domain/FreeRTOS-Kernel
+qemu-patch=qemu-8.0.2 quard-star files only
+opensbi-patch=opensbi-1.2/platform/quard_star

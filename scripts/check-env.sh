@@ -22,7 +22,7 @@ case "${VERSION_ID:-}" in
 esac
 
 missing=0
-for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 python3 ip tcpdump curl sha256sum; do
+for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 ninja meson pkg-config python3 ip tcpdump curl sha256sum; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "missing: $cmd" >&2
     missing=1
