@@ -34,9 +34,14 @@ for series in patches/*/series; do
   while IFS= read -r patch; do
     [ -n "$patch" ] || continue
     case "$patch" in \#*) continue ;; esac
-    git -C "third_party/$name" apply --check "$root/patches/$name/$patch"
+    git -C "third_party/$name" apply --check --ignore-space-change "$root/patches/$name/$patch"
   done < "$series"
 done
+
+if [ -e trusted/FreeRTOS-Kernel ]; then
+  echo "error: trusted/FreeRTOS-Kernel must use the locked submodule instead" >&2
+  exit 1
+fi
 
 if [ -f out/downloads/ff15.zip ]; then
   QS_ROOT="$root" "$root/scripts/fetch-fatfs.sh" --check

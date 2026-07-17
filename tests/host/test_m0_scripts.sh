@@ -16,7 +16,7 @@ ID=ubuntu
 VERSION_ID=26.04
 EOF
 
-for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 python3 ip tcpdump curl sha256sum; do
+for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 ninja meson pkg-config python3 ip tcpdump curl sha256sum; do
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/$cmd"
   chmod +x "$tmp/bin/$cmd"
 done

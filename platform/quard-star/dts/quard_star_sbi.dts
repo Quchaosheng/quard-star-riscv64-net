@@ -1,0 +1,119 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "riscv-quard-star";
+	model = "riscv-quard-star,qemu";
+
+	chosen {
+		stdout-path = "/soc/uart0@10000000";
+
+		opensbi-domains {
+			compatible = "opensbi,domain,config";
+
+			allmem: all-memory {
+				compatible = "opensbi,domain,memregion";
+				base = <0 0>;
+				order = <64>;
+			};
+
+			udomain: untrusted-domain {
+				compatible = "opensbi,domain,instance";
+				possible-harts = <&cpu0>;
+				regions = <&allmem 0x7>;
+				boot-hart = <&cpu0>;
+				next-arg1 = <0 0x82000000>;
+				next-addr = <0 0x80200000>;
+				next-mode = <1>;
+				system-reset-allowed;
+			};
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0x40000000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <0x989680>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "riscv";
+			opensbi-domain = <&udomain>;
+			riscv,isa = "rv64imafdcsu";
+			mmu-type = "riscv,sv39";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		uart0: uart0@10000000 {
+			interrupts = <10>;
+			interrupt-parent = <&plic>;
+			clock-frequency = <0x384000>;
+			reg = <0 0x10000000 0 0x100>;
+			compatible = "ns16550a";
+		};
+
+		uart1: uart1@10001000 {
+			interrupts = <11>;
+			interrupt-parent = <&plic>;
+			clock-frequency = <0x384000>;
+			reg = <0 0x10001000 0 0x100>;
+			compatible = "ns16550a";
+		};
+
+		uart2: uart2@10002000 {
+			interrupts = <12>;
+			interrupt-parent = <&plic>;
+			clock-frequency = <0x384000>;
+			reg = <0 0x10002000 0 0x100>;
+			compatible = "ns16550a";
+		};
+
+		rtc@10003000 {
+			interrupts = <13>;
+			interrupt-parent = <&plic>;
+			reg = <0 0x10003000 0 0x1000>;
+			compatible = "google,goldfish-rtc";
+		};
+
+		test@100000 {
+			reg = <0 0x100000 0 0x1000>;
+			compatible = "sifive,test1", "sifive,test0", "syscon";
+		};
+
+		plic: plic@c000000 {
+			riscv,ndev = <0x35>;
+			reg = <0 0x0c000000 0 0x210000>;
+			interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9>;
+			interrupt-controller;
+			compatible = "riscv,plic0";
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+		};
+
+		clint@2000000 {
+			interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7>;
+			reg = <0 0x02000000 0 0x10000>;
+			compatible = "riscv,clint0";
+		};
+	};
+};
