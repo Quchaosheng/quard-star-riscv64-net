@@ -48,6 +48,8 @@ NET_SRCS_C = \
 	net/mblock.c \
 	net/fixq.c \
 	net/pktbuf.c \
+	net/ipaddr.c \
+	net/netif.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
