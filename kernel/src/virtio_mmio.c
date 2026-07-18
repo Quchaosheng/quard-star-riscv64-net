@@ -96,8 +96,17 @@ u8 virtio_mmio_config8(struct virtio_mmio *dev, u32 offset)
     return *config;
 }
 
-void virtio_mmio_reset(struct virtio_mmio *dev)
+int virtio_mmio_reset(struct virtio_mmio *dev)
 {
+    if (dev == 0)
+        return -1;
     *mmio_reg(dev, VIRTIO_MMIO_STATUS) = 0;
     __sync_synchronize();
+    u32 polls = 1000000;
+    while (*mmio_reg(dev, VIRTIO_MMIO_STATUS) != 0) {
+        if (--polls == 0)
+            return -1;
+        asm volatile("nop");
+    }
+    return 0;
 }

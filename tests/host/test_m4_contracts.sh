@@ -94,7 +94,7 @@ require_order kernel/src/virtio_net.c \
   'net_post_rx_locked' 'virtio_mmio_driver_ok' \
   'M4 must publish RX buffers before DRIVER_OK'
 require_text kernel/src/virtio_net.c \
-  'virtq_pop_used(&net.rx_queue' \
+  'virtq_pop_used_len(&net.rx_queue' \
   'the net ISR must drain RX completions'
 require_text kernel/src/virtio_net.c \
   'virtq_pop_used(&net.tx_queue' \
@@ -109,6 +109,24 @@ require_text kernel/src/virtio_net.c \
 require_text kernel/src/virtio_net.c \
   'length < ETHERNET_MIN_FRAME || length > ETHERNET_MAX_FRAME' \
   'TX must reject invalid Ethernet frame lengths'
+require_text kernel/include/timeros/virtio_net.h \
+  '#define ETHERNET_HEADER_SIZE 14' \
+  'RX must allow TAP frames whose wire padding was removed'
+require_text kernel/src/virtio_net.c \
+  'used_length < VIRTIO_NET_HDR_SIZE + ETHERNET_HEADER_SIZE' \
+  'RX ownership checks must use the Ethernet header safety bound'
+require_text kernel/src/virtio_net.c \
+  'virtq_pop_used_len(&net.rx_queue' \
+  'RX used ID and length must be consumed after one acquire'
+require_text kernel/src/virtio_net.c \
+  'net_validate_header_locked' \
+  'RX must reject unsupported legacy net header metadata'
+require_text kernel/src/virtio_net.c \
+  '(2 * resets_done + 1) * QS_NET_ITERATIONS' \
+  'M4 resets must leave traffic on both sides of each reset'
+require_text kernel/src/virtio_mmio.c \
+  'while (*mmio_reg(dev, VIRTIO_MMIO_STATUS) != 0)' \
+  'VirtIO reset must wait for device acknowledgement'
 require_text kernel/src/virtio_net.c \
   'capacity < frame_length' \
   'RX must reject a caller buffer that is too small'

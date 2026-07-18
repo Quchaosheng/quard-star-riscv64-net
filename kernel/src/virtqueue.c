@@ -110,15 +110,18 @@ void virtq_submit(struct virtqueue *q, u16 head)
                      __ATOMIC_RELEASE);
 }
 
-int virtq_pop_used(struct virtqueue *q, u16 *head)
+int virtq_pop_used_len(struct virtqueue *q, u16 *head, u32 *length)
 {
-    if (q == 0 || head == 0)
+    if (q == 0 || head == 0 || length == 0)
         return -1;
     u16 used_idx = __atomic_load_n(&q->used->idx, __ATOMIC_ACQUIRE);
     if (q->used_idx == used_idx)
         return 0;
 
-    u32 id = q->used->ring[q->used_idx % VIRTQ_NUM].id;
+    struct virtq_used_elem *used =
+        &q->used->ring[q->used_idx % VIRTQ_NUM];
+    u32 id = used->id;
+    u32 used_length = used->len;
     q->used_idx++;
     if (id >= VIRTQ_NUM)
         return -1;
@@ -127,7 +130,14 @@ int virtq_pop_used(struct virtqueue *q, u16 *head)
 
     q->active[id] = 0;
     *head = (u16)id;
+    *length = used_length;
     return 1;
+}
+
+int virtq_pop_used(struct virtqueue *q, u16 *head)
+{
+    u32 length;
+    return virtq_pop_used_len(q, head, &length);
 }
 
 int virtq_free_count(const struct virtqueue *q)

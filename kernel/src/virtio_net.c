@@ -92,6 +92,15 @@ static int net_find_rx_slot_locked(u16 descriptor)
     return -1;
 }
 
+static int net_validate_header_locked(int slot)
+{
+    for (int i = 0; i < VIRTIO_NET_HDR_SIZE; i++) {
+        if (net.rx[slot].bytes[i] != 0)
+            return -1;
+    }
+    return 0;
+}
+
 static int net_find_free_tx_slot_locked(void)
 {
     for (int i = 0; i < VIRTQ_NUM; i++) {
@@ -161,7 +170,7 @@ static int net_start_locked(void)
     return 0;
 
 fail:
-    virtio_mmio_reset(&net.mmio);
+    (void)virtio_mmio_reset(&net.mmio);
     net.active = 0;
     net.failed = 1;
     return -1;
@@ -198,7 +207,12 @@ int virtio_net_reset(void)
     net.active = 0;
     task_wake(&net.rx_wait, 1);
     task_wake(&net.tx_wait, 1);
-    virtio_mmio_reset(&net.mmio);
+    if (virtio_mmio_reset(&net.mmio) < 0) {
+        net.failed = 1;
+        net.resetting = 0;
+        spin_unlock(&net.lock);
+        return -1;
+    }
 
     int result = net_start_locked();
     if (result == 0) {
@@ -353,6 +367,9 @@ int virtio_net_rx_completions(void)
 #ifndef QS_NET_ITERATIONS
 #define QS_NET_ITERATIONS 32
 #endif
+#ifndef QS_NET_RESETS
+#define QS_NET_RESETS 1
+#endif
 
 #define M4_ETHERTYPE 0x88b5
 #define M4_PAYLOAD_SIZE 32
@@ -410,9 +427,10 @@ static int net_validate_response(const u8 *frame, u32 length, u32 sequence)
 {
     static const u8 host_mac[6] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x57 };
 
-    if (length < 24 || memcmp(frame, net.mac, 6) != 0 ||
-        memcmp(frame + 6, host_mac, 6) != 0 ||
-        net_get_be16(frame + 12) != M4_ETHERTYPE ||
+    if (length < ETHERNET_HEADER_SIZE || memcmp(frame, net.mac, 6) != 0 ||
+        net_get_be16(frame + 12) != M4_ETHERTYPE)
+        return 1;
+    if (length < 24 || memcmp(frame + 6, host_mac, 6) != 0 ||
         net_get_be32(frame + 14) != sequence)
         return -1;
     u16 payload_length = net_get_be16(frame + 18);
@@ -446,9 +464,7 @@ int virtio_net_raw_test(void)
 #ifdef QS_M4_TEST
     static u8 tx_frame[M4_FRAME_SIZE];
     static u8 rx_frame[ETHERNET_MAX_FRAME];
-    int reset_at = QS_NET_ITERATIONS / 2;
-    if (reset_at < 1)
-        reset_at = 1;
+    u32 resets_done = 0;
 
     m4_mark_net_link();
     for (u32 sequence = 0; sequence < QS_NET_ITERATIONS; sequence++) {
@@ -460,22 +476,35 @@ int virtio_net_raw_test(void)
             m4_mark_net_tx();
         }
 
-        u32 received = 0;
-        if (virtio_net_receive(rx_frame, sizeof(rx_frame), &received,
-                               r_mtime() + M4_RX_TIMEOUT_TICKS) < 0 ||
-            net_validate_response(rx_frame, received, sequence) < 0)
-            return -2;
+        u64 deadline = r_mtime() + M4_RX_TIMEOUT_TICKS;
+        for (;;) {
+            u32 received = 0;
+            if (virtio_net_receive(rx_frame, sizeof(rx_frame), &received,
+                                   deadline) < 0)
+                return -2;
+            int validation = net_validate_response(rx_frame, received,
+                                                   sequence);
+            if (validation == 0)
+                break;
+            if (validation < 0)
+                return -2;
+        }
         if (sequence == 0) {
             printk("QS:NET_RX_OK\n");
             m4_mark_net_rx();
         }
 
-        if ((int)(sequence + 1) == reset_at) {
+        if (resets_done < QS_NET_RESETS &&
+            2 * (sequence + 1) * QS_NET_RESETS >=
+                (2 * resets_done + 1) * QS_NET_ITERATIONS) {
             if (net_wait_tx_idle(r_mtime() + M4_RX_TIMEOUT_TICKS) < 0 ||
                 virtio_net_reset() < 0)
                 return -3;
-            printk("QS:NET_RESET_OK\n");
-            m4_mark_net_reset();
+            resets_done++;
+            if (resets_done == 1) {
+                printk("QS:NET_RESET_OK\n");
+                m4_mark_net_reset();
+            }
         }
     }
 
@@ -488,6 +517,8 @@ int virtio_net_raw_test(void)
 
     struct virtio_net_stats stats;
     virtio_net_get_stats(&stats);
+    if (stats.resets != QS_NET_RESETS)
+        return -5;
     printk("QS:NET_RESETS:%d\n", (int)stats.resets);
     printk("QS:NET_STRESS_FRAMES:%d\n", QS_NET_ITERATIONS);
     m4_mark_net_stress();
@@ -504,10 +535,10 @@ void virtio_net_intr(void)
     net.stats.interrupts++;
 
     for (;;) {
-        u32 used_length = net.rx_queue.used->ring[
-            net.rx_queue.used_idx % VIRTQ_NUM].len;
+        u32 used_length;
         u16 descriptor;
-        int result = virtq_pop_used(&net.rx_queue, &descriptor);
+        int result = virtq_pop_used_len(&net.rx_queue, &descriptor,
+                                        &used_length);
         if (result == 0)
             break;
         if (result < 0) {
@@ -515,7 +546,8 @@ void virtio_net_intr(void)
             break;
         }
         int slot = net_find_rx_slot_locked(descriptor);
-        if (slot < 0 || used_length < VIRTIO_NET_HDR_SIZE + ETHERNET_MIN_FRAME ||
+        if (slot < 0 || net_validate_header_locked(slot) < 0 ||
+            used_length < VIRTIO_NET_HDR_SIZE + ETHERNET_HEADER_SIZE ||
             used_length > VIRTIO_NET_HDR_SIZE + ETHERNET_MAX_FRAME) {
             net_fail_locked("rx-ownership");
             break;
