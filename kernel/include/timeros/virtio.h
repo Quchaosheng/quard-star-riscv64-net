@@ -4,9 +4,11 @@
 #include <timeros/bio.h>
 #include <timeros/virtio_mmio.h>
 #include <timeros/virtqueue.h>
+#include <layout.h>
 
 // quard_star的virtio起始地址
-#define VIRTIO0 0x10100000
+#define VIRTIO0 QS_VIRTIO_BLOCK_BASE
+#define VIRTIO1 QS_VIRTIO_NET_BASE
 
 
 // device feature bits

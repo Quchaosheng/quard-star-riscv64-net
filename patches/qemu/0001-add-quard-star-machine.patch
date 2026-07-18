@@ -41,7 +41,7 @@ new file mode 100644
 index 00000000..f7733516
 --- /dev/null
 +++ b/hw/riscv/quard_star.c
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,319 @@
 +#include "qemu/osdep.h"
 +#include "qemu/units.h"
 +#include "qemu/error-report.h"
@@ -89,6 +89,7 @@ index 00000000..f7733516
 +    [QUARD_STAR_RTC]         = { 0x10003000,        0x1000 },
 +
 +    [QUARD_STAR_VIRTIO0]     = { 0x10100000,        0x1000 },
++    [QUARD_STAR_VIRTIO1]     = { 0x10101000,        0x1000 },
 +    [QUARD_STAR_FLASH]       = { 0x20000000,     0x2000000 },
 +    [QUARD_STAR_DRAM]        = { 0x80000000,    0x40000000 },
 +};
@@ -294,6 +295,9 @@ index 00000000..f7733516
 +    sysbus_create_simple("virtio-mmio",
 +        quard_star_memmap[QUARD_STAR_VIRTIO0].base,
 +        qdev_get_gpio_in(DEVICE(s->plic[0]), QUARD_STAR_VIRTIO0_IRQ));
++    sysbus_create_simple("virtio-mmio",
++        quard_star_memmap[QUARD_STAR_VIRTIO1].base,
++        qdev_get_gpio_in(DEVICE(s->plic[0]), QUARD_STAR_VIRTIO1_IRQ));
 +}
 +
 +/* quard-star 初始化各种硬件 */
@@ -363,7 +367,7 @@ new file mode 100644
 index 00000000..7c7dab22
 --- /dev/null
 +++ b/include/hw/riscv/quard_star.h
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,63 @@
 +#ifndef HW_RISCV_QUARD_STAR__H
 +#define HW_RISCV_QUARD_STAR__H
 +
@@ -401,12 +405,14 @@ index 00000000..7c7dab22
 +    QUARD_STAR_UART2,
 +    QUARD_STAR_RTC,
 +    QUARD_STAR_VIRTIO0,
++    QUARD_STAR_VIRTIO1,
 +    QUARD_STAR_FLASH,
 +    QUARD_STAR_DRAM,
 +};
 +
 +enum {
 +    QUARD_STAR_VIRTIO0_IRQ = 1,
++    QUARD_STAR_VIRTIO1_IRQ = 2,
 +    QUARD_STAR_UART0_IRQ = 10,  //定义了串口中断号为10
 +    QUARD_STAR_UART1_IRQ = 11,
 +    QUARD_STAR_UART2_IRQ = 12,
