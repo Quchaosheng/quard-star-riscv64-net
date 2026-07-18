@@ -44,10 +44,8 @@ net_err_t arp_make_request(netif_t *netif, const ipaddr_t *protocol_addr);
 net_err_t arp_make_gratuitous(netif_t *netif);
 net_err_t arp_in(netif_t *netif, pktbuf_t *buf);
 net_err_t arp_make_reply(netif_t *netif, pktbuf_t *buf);
-net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr,
-                      pktbuf_t *buf);
+net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr, pktbuf_t *buf);
 const uint8_t *arp_find(netif_t *netif, const ipaddr_t *ipaddr);
 void arp_clear(netif_t *netif);
-void arp_update_from_ipbuf(netif_t *netif, pktbuf_t *buf);
 
 #endif

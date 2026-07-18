@@ -14,6 +14,7 @@ static const uint8_t empty_hwaddr[ETH_HWA_SIZE];
 static void arp_free_waiting(arp_entry_t *entry)
 {
     nlist_node_t *node;
+
     while ((node = nlist_remove_first(&entry->buf_list)) != 0) {
         pktbuf_t *buf = nlist_entry(node, pktbuf_t, node);
         pktbuf_free(buf);
@@ -28,8 +29,10 @@ static arp_entry_t *arp_entry_from_node(nlist_node_t *node)
 static arp_entry_t *arp_find_entry(netif_t *netif, const ipaddr_t *ipaddr)
 {
     nlist_node_t *node;
+
     nlist_for_each(node, &cache_list) {
         arp_entry_t *entry = arp_entry_from_node(node);
+
         if (entry->netif == netif && ipaddr_is_equal(&entry->paddr, ipaddr)) {
             nlist_remove(&cache_list, node);
             nlist_insert_first(&cache_list, node);
@@ -42,6 +45,7 @@ static arp_entry_t *arp_find_entry(netif_t *netif, const ipaddr_t *ipaddr)
 static arp_entry_t *arp_alloc_entry(int force)
 {
     arp_entry_t *entry = (arp_entry_t *)mblock_alloc(&cache_blocks, -1);
+
     if (entry == 0 && force) {
         nlist_node_t *node = nlist_remove_last(&cache_list);
         if (node != 0) {
@@ -70,8 +74,8 @@ static void arp_free_entry(arp_entry_t *entry)
 }
 
 static void arp_set_entry(arp_entry_t *entry, netif_t *netif,
-                           const uint8_t *ipbuf, const uint8_t *mac,
-                           arp_state_t state)
+                          const uint8_t *ipbuf, const uint8_t *mac,
+                          arp_state_t state)
 {
     entry->netif = netif;
     ipaddr_from_buf(&entry->paddr, ipbuf);
@@ -82,12 +86,13 @@ static void arp_set_entry(arp_entry_t *entry, netif_t *netif,
 static net_err_t arp_send_waiting(arp_entry_t *entry)
 {
     nlist_node_t *node;
+
     while ((node = nlist_remove_first(&entry->buf_list)) != 0) {
         pktbuf_t *buf = nlist_entry(node, pktbuf_t, node);
         net_err_t err = ether_raw_out(entry->netif, NET_PROTOCOL_IPV4,
                                       entry->haddr, buf);
         if (err < 0) {
-            pktbuf_free(buf);
+            arp_free_waiting(entry);
             return err;
         }
     }
@@ -98,6 +103,7 @@ static net_err_t arp_cache_insert(netif_t *netif, const uint8_t *ipbuf,
                                   const uint8_t *mac, int force)
 {
     ipaddr_t ip;
+
     ipaddr_from_buf(&ip, ipbuf);
     arp_entry_t *entry = arp_find_entry(netif, &ip);
     if (entry == 0) {
@@ -162,8 +168,6 @@ net_err_t arp_make_request(netif_t *netif, const ipaddr_t *protocol_addr)
 
     net_err_t err = ether_raw_out(netif, NET_PROTOCOL_ARP,
                                   ether_broadcast_addr(), buf);
-    if (err < 0)
-        pktbuf_free(buf);
     return err;
 }
 
@@ -202,6 +206,8 @@ net_err_t arp_in(netif_t *netif, pktbuf_t *buf)
     if (pktbuf_set_cont(buf, sizeof(arp_pkt_t)) != NET_ERR_OK)
         return NET_ERR_SIZE;
     arp_pkt_t *packet = (arp_pkt_t *)pktbuf_data(buf);
+    if (packet == 0)
+        return NET_ERR_SIZE;
     net_err_t err = arp_packet_check(packet, pktbuf_total(buf));
     if (err < 0)
         return err;
@@ -216,8 +222,6 @@ net_err_t arp_in(netif_t *netif, pktbuf_t *buf)
     ipaddr_from_buf(&target, packet->target_paddr);
     if (opcode == ARP_REQUEST && ipaddr_is_equal(&target, &netif->ipaddr)) {
         err = arp_make_reply(netif, buf);
-        if (err < 0)
-            pktbuf_free(buf);
         return err;
     }
     pktbuf_free(buf);
@@ -240,8 +244,12 @@ const uint8_t *arp_find(netif_t *netif, const ipaddr_t *ipaddr)
 net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr,
                       pktbuf_t *buf)
 {
-    if (netif == 0 || ipaddr == 0 || buf == 0)
+    if (buf == 0)
         return NET_ERR_PARAM;
+    if (netif == 0 || ipaddr == 0) {
+        pktbuf_free(buf);
+        return NET_ERR_PARAM;
+    }
     const uint8_t *broadcast = arp_find(netif, ipaddr);
     if (broadcast == ether_broadcast_addr())
         return ether_raw_out(netif, NET_PROTOCOL_IPV4, broadcast, buf);
@@ -250,15 +258,19 @@ net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr,
     if (entry != 0 && entry->state == NET_ARP_RESOLVED)
         return ether_raw_out(netif, NET_PROTOCOL_IPV4, entry->haddr, buf);
     if (entry != 0) {
-        if (nlist_count(&entry->buf_list) >= ARP_MAX_PKT_WAIT)
+        if (nlist_count(&entry->buf_list) >= ARP_MAX_PKT_WAIT) {
+            pktbuf_free(buf);
             return NET_ERR_FULL;
+        }
         nlist_insert_last(&entry->buf_list, &buf->node);
         return NET_ERR_OK;
     }
 
     entry = arp_alloc_entry(1);
-    if (entry == 0)
+    if (entry == 0) {
+        pktbuf_free(buf);
         return NET_ERR_MEM;
+    }
     uint8_t ipbuf[IPV4_ADDR_SIZE];
     ipaddr_to_buf(ipaddr, ipbuf);
     arp_set_entry(entry, netif, ipbuf, empty_hwaddr, NET_ARP_WAITING);
@@ -285,10 +297,4 @@ void arp_clear(netif_t *netif)
             arp_free_entry(entry);
         node = next;
     }
-}
-
-void arp_update_from_ipbuf(netif_t *netif, pktbuf_t *buf)
-{
-    (void)netif;
-    (void)buf;
 }

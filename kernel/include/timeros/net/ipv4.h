@@ -24,16 +24,14 @@ typedef struct __attribute__((packed)) _ipv4_hdr_t {
     uint8_t dest_ip[IPV4_ADDR_SIZE];
 } ipv4_hdr_t;
 
-typedef net_err_t (*ipv4_input_handler_t)(netif_t *netif,
-                                           const ipaddr_t *src,
-                                           const ipaddr_t *dest,
-                                           pktbuf_t *buf);
+typedef net_err_t (*ipv4_input_handler_t)(netif_t *netif, const ipaddr_t *src,
+                                          const ipaddr_t *dest, pktbuf_t *buf);
 
 net_err_t ipv4_init(void);
-net_err_t ipv4_register_handler(uint8_t protocol,
-                                ipv4_input_handler_t handler);
+net_err_t ipv4_register_handler(uint8_t protocol, ipv4_input_handler_t handler);
 net_err_t ipv4_in(netif_t *netif, pktbuf_t *buf);
-net_err_t ipv4_out(netif_t *netif, const ipaddr_t *dest,
-                   uint8_t protocol, pktbuf_t *buf);
+/* Output consumes buf on every return after a non-null buf is supplied. */
+net_err_t ipv4_out(netif_t *netif, const ipaddr_t *dest, uint8_t protocol,
+                   pktbuf_t *buf);
 
 #endif

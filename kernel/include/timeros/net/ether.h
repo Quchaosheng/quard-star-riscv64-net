@@ -23,9 +23,11 @@ typedef net_err_t (*ether_input_handler_t)(netif_t *netif, pktbuf_t *buf);
 const uint8_t *ether_broadcast_addr(void);
 net_err_t ether_register_handler(uint16_t protocol,
                                  ether_input_handler_t handler);
-net_err_t ether_raw_out(netif_t *netif, uint16_t protocol,
-                        const uint8_t *dest, pktbuf_t *buf);
+/* Output consumes buf on every return after a non-null buf is supplied. */
+net_err_t ether_raw_out(netif_t *netif, uint16_t protocol, const uint8_t *dest,
+                        pktbuf_t *buf);
 net_err_t ether_init(void);
+/* Input retains packet ownership on error; handlers consume it on success. */
 net_err_t ether_in(netif_t *netif, pktbuf_t *packet);
 
 #endif

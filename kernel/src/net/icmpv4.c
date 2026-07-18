@@ -50,8 +50,9 @@ net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
     if (pktbuf_checksum16(buf, pktbuf_total(buf), 0, 1) != 0)
         return NET_ERR_CHKSUM;
     icmpv4_hdr_t *header = (icmpv4_hdr_t *)pktbuf_data(buf);
+    if (header == 0)
+        return NET_ERR_SIZE;
     if (header->code != ICMPV4_ECHO_CODE) {
-        pktbuf_free(buf);
         return NET_ERR_NOT_SUPPORT;
     }
     if (header->type == ICMPV4_ECHO_REPLY) {
@@ -62,13 +63,10 @@ net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
         return NET_ERR_OK;
     }
     if (header->type != ICMPV4_ECHO_REQUEST) {
-        pktbuf_free(buf);
         return NET_ERR_NOT_SUPPORT;
     }
     icmpv4_stats.echo_requests++;
     net_err_t err = icmpv4_echo_reply(netif, src, buf);
-    if (err < 0)
-        pktbuf_free(buf);
     return err;
 }
 
@@ -80,7 +78,7 @@ net_err_t icmpv4_out_echo(netif_t *netif, const ipaddr_t *dest,
         (payload_len != 0 && payload == 0))
         return NET_ERR_PARAM;
     if (payload_len > netif->mtu - IPV4_HEADER_MIN -
-                      (int)sizeof(icmpv4_hdr_t))
+        (int)sizeof(icmpv4_hdr_t))
         return NET_ERR_SIZE;
     pktbuf_t *buf = pktbuf_alloc(sizeof(icmpv4_hdr_t) + payload_len);
     if (buf == 0)
@@ -94,7 +92,7 @@ net_err_t icmpv4_out_echo(netif_t *netif, const ipaddr_t *dest,
     if (payload_len != 0) {
         pktbuf_reset_acc(buf);
         if (pktbuf_seek(buf, sizeof(icmpv4_hdr_t)) != NET_ERR_OK ||
-            pktbuf_write(buf, (uint8_t *)payload, payload_len) != NET_ERR_OK) {
+            pktbuf_write(buf, payload, payload_len) != NET_ERR_OK) {
             pktbuf_free(buf);
             return NET_ERR_SIZE;
         }
@@ -103,8 +101,5 @@ net_err_t icmpv4_out_echo(netif_t *netif, const ipaddr_t *dest,
     header = (icmpv4_hdr_t *)pktbuf_data(buf);
     header->checksum =
         x_htons(pktbuf_checksum16(buf, pktbuf_total(buf), 0, 1));
-    net_err_t err = ipv4_out(netif, dest, NET_PROTOCOL_ICMPV4, buf);
-    if (err < 0)
-        pktbuf_free(buf);
-    return err;
+    return ipv4_out(netif, dest, NET_PROTOCOL_ICMPV4, buf);
 }

@@ -54,11 +54,21 @@ static struct ether_handler *ether_find_handler(uint16_t protocol)
     return 0;
 }
 
+static int ether_is_broadcast(const uint8_t *addr)
+{
+    for (int i = 0; i < ETH_HWA_SIZE; i++) {
+        if (addr[i] != 0xff)
+            return 0;
+    }
+    return 1;
+}
+
 const uint8_t *ether_broadcast_addr(void)
 {
     static const uint8_t broadcast[ETH_HWA_SIZE] = {
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     };
+
     return broadcast;
 }
 
@@ -82,44 +92,70 @@ net_err_t ether_register_handler(uint16_t protocol,
 net_err_t ether_raw_out(netif_t *netif, uint16_t protocol,
                         const uint8_t *dest, pktbuf_t *buf)
 {
-    if (netif == 0 || dest == 0 || buf == 0)
+    if (buf == 0)
         return NET_ERR_PARAM;
-    if (netif->state != NETIF_ACTIVE || netif->hwaddr.len < ETH_HWA_SIZE)
+    if (netif == 0 || dest == 0) {
+        pktbuf_free(buf);
+        return NET_ERR_PARAM;
+    }
+    if (netif->state != NETIF_ACTIVE || netif->hwaddr.len < ETH_HWA_SIZE) {
+        pktbuf_free(buf);
         return NET_ERR_STATE;
+    }
 
     int payload_size = pktbuf_total(buf);
-    if (payload_size < 0 || payload_size > ETH_MTU)
+    if (payload_size < 0 || payload_size > ETH_MTU) {
+        pktbuf_free(buf);
         return NET_ERR_SIZE;
+    }
     if (payload_size < ETH_DATA_MIN) {
         net_err_t err = pktbuf_resize(buf, ETH_DATA_MIN);
-        if (err < 0)
+        if (err < 0) {
+            pktbuf_free(buf);
             return err;
+        }
         pktbuf_reset_acc(buf);
         err = pktbuf_seek(buf, payload_size);
-        if (err < 0)
+        if (err < 0) {
+            pktbuf_free(buf);
             return err;
+        }
         err = pktbuf_fill(buf, 0, ETH_DATA_MIN - payload_size);
-        if (err < 0)
+        if (err < 0) {
+            pktbuf_free(buf);
             return err;
+        }
     }
 
     net_err_t err = pktbuf_add_header(buf, sizeof(ether_hdr_t), 1);
-    if (err < 0)
+    if (err < 0) {
+        pktbuf_free(buf);
         return err;
+    }
     ether_hdr_t *header = (ether_hdr_t *)pktbuf_data(buf);
-    if (header == 0)
+    if (header == 0) {
+        pktbuf_free(buf);
         return NET_ERR_SIZE;
+    }
     plat_memcpy(header->dest, dest, ETH_HWA_SIZE);
     plat_memcpy(header->src, netif->hwaddr.addr, ETH_HWA_SIZE);
     header->protocol = x_htons(protocol);
 
-    if (plat_memcmp(netif->hwaddr.addr, dest, ETH_HWA_SIZE) == 0)
-        return netif_put_in(netif, buf, -1);
-    if (netif->ops == 0 || netif->ops->xmit == 0)
-        return NET_ERR_NOT_SUPPORT;
-    err = netif_put_out(netif, buf, -1);
-    if (err < 0)
+    if (plat_memcmp(netif->hwaddr.addr, dest, ETH_HWA_SIZE) == 0) {
+        err = netif_put_in(netif, buf, -1);
+        if (err < 0)
+            pktbuf_free(buf);
         return err;
+    }
+    if (netif->ops == 0 || netif->ops->xmit == 0) {
+        pktbuf_free(buf);
+        return NET_ERR_NOT_SUPPORT;
+    }
+    err = netif_put_out(netif, buf, -1);
+    if (err < 0) {
+        pktbuf_free(buf);
+        return err;
+    }
     return netif->ops->xmit(netif);
 }
 
@@ -128,7 +164,7 @@ net_err_t ether_in(netif_t *netif, pktbuf_t *packet)
     if (netif == 0 || packet == 0)
         return NET_ERR_PARAM;
     int total_size = pktbuf_total(packet);
-    if (total_size < (int)sizeof(ether_hdr_t) ||
+    if (total_size < ETH_FRAME_MIN ||
         total_size > ETH_FRAME_MAX)
         return NET_ERR_SIZE;
     if (pktbuf_set_cont(packet, sizeof(ether_hdr_t)) != NET_ERR_OK)
@@ -137,6 +173,10 @@ net_err_t ether_in(netif_t *netif, pktbuf_t *packet)
     ether_hdr_t *header = (ether_hdr_t *)pktbuf_data(packet);
     if (header == 0)
         return NET_ERR_SIZE;
+    if (netif->hwaddr.len >= ETH_HWA_SIZE &&
+        plat_memcmp(header->dest, netif->hwaddr.addr, ETH_HWA_SIZE) != 0 &&
+        !ether_is_broadcast(header->dest))
+        return NET_ERR_UNREACH;
     uint16_t protocol = x_ntohs(header->protocol);
     struct ether_handler *entry = ether_find_handler(protocol);
     if (pktbuf_remove_header(packet, sizeof(ether_hdr_t)) != NET_ERR_OK)
