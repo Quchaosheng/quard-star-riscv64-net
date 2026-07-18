@@ -18,7 +18,15 @@ typedef struct __attribute__((packed)) _icmpv4_hdr_t {
     uint16_t sequence;
 } icmpv4_hdr_t;
 
+typedef struct _icmpv4_stats_t {
+    uint32_t echo_requests;
+    uint32_t echo_replies;
+    uint16_t last_reply_identifier;
+    uint16_t last_reply_sequence;
+} icmpv4_stats_t;
+
 net_err_t icmpv4_init(void);
+void icmpv4_get_stats(icmpv4_stats_t *stats);
 net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
                     const ipaddr_t *dest, pktbuf_t *buf);
 net_err_t icmpv4_out_echo(netif_t *netif, const ipaddr_t *dest,

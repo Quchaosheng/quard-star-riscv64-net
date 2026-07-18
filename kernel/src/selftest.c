@@ -24,6 +24,13 @@
                             M4_NET_IRQ_DONE | M4_NET_TX_DONE | \
                             M4_NET_RX_DONE | M4_NET_RESET_DONE | \
                             M4_NET_STRESS_DONE)
+#define M5_NET_ARP_DONE   (1U << 15)
+#define M5_NET_PING_DONE  (1U << 16)
+#ifdef QS_M4_TEST
+#define M5_ALL_DONE       (M4_ALL_DONE | M5_NET_ARP_DONE | M5_NET_PING_DONE)
+#else
+#define M5_ALL_DONE       (M3_ALL_DONE | M5_NET_ARP_DONE | M5_NET_PING_DONE)
+#endif
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -87,6 +94,18 @@ void m4_mark_net_rx(void) { m4_mark(M4_NET_RX_DONE); }
 void m4_mark_net_reset(void) { m4_mark(M4_NET_RESET_DONE); }
 void m4_mark_net_stress(void) { m4_mark(M4_NET_STRESS_DONE); }
 
+static void m5_mark(u32 bit)
+{
+#ifdef QS_M5_TEST
+    mark(bit);
+#else
+    (void)bit;
+#endif
+}
+
+void m5_mark_net_arp(void) { m5_mark(M5_NET_ARP_DONE); }
+void m5_mark_net_ping(void) { m5_mark(M5_NET_PING_DONE); }
+
 void m2c_selftest_poll(void)
 {
 #ifdef QS_M2C_TEST
@@ -96,6 +115,9 @@ void m2c_selftest_poll(void)
 #endif
 #ifdef QS_M4_TEST
     required = M4_ALL_DONE;
+#endif
+#ifdef QS_M5_TEST
+    required = M5_ALL_DONE;
 #endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
@@ -109,6 +131,8 @@ void m2c_selftest_poll(void)
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
 #ifdef QS_M4_STRESS
     printk("QS:TEST_PASS:m4-stress\n");
+#elif defined(QS_M5_TEST)
+    printk("QS:TEST_PASS:m5-smoke\n");
 #elif defined(QS_M4_TEST)
     printk("QS:TEST_PASS:m4-smoke\n");
 #elif defined(QS_M3_STRESS)
