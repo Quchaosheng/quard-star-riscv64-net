@@ -64,6 +64,13 @@ static const netif_ops_t fake_ops = {
     .xmit = fake_xmit,
 };
 
+static net_err_t conflicting_arp_handler(netif_t *netif, pktbuf_t *buf)
+{
+    (void)netif;
+    pktbuf_free(buf);
+    return NET_ERR_OK;
+}
+
 static void reset_tx_counts(void)
 {
     arp_request_count = 0;
@@ -115,10 +122,33 @@ static void assert_pktbuf_pool_complete(void)
         pktbuf_free(bufs[i]);
 }
 
-static void tick_seconds(int seconds)
+static int scan_count(int seconds)
 {
-    for (int i = 0; i < seconds; i++)
+    return 1 + (seconds - 1) / ARP_TIMER_TMO;
+}
+
+static void tick_scans(int scans)
+{
+    for (int i = 0; i < scans; i++)
         assert(net_timer_check_tmo(ARP_TIMER_TMO * 1000) == NET_ERR_OK);
+}
+
+static void test_reinit_preserves_live_cache(netif_t *netif)
+{
+    ipaddr_t peer;
+
+    assert(ipaddr_from_str(&peer, "192.168.100.9") == NET_ERR_OK);
+    reset_tx_counts();
+    assert(arp_resolve(netif, &peer, make_payload()) == NET_ERR_OK);
+    assert(arp_request_count == 1);
+    assert(arp_init() == NET_ERR_EXIST);
+    tick_scans(scan_count(ARP_ENTRY_PENDING_TMO));
+    assert(arp_request_count == 2);
+    inject_reply(netif, &peer);
+    assert(ipv4_count == 1);
+    assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
+    arp_clear(netif);
+    assert_pktbuf_pool_complete();
 }
 
 static void test_unresolved_retries_then_releases(netif_t *netif)
@@ -129,7 +159,7 @@ static void test_unresolved_retries_then_releases(netif_t *netif)
     reset_tx_counts();
     assert(arp_resolve(netif, &missing, make_payload()) == NET_ERR_OK);
     assert(arp_request_count == 1);
-    tick_seconds(ARP_ENTRY_RETRY_CNT);
+    tick_scans(scan_count(ARP_ENTRY_PENDING_TMO) * ARP_ENTRY_RETRY_CNT);
     assert(arp_request_count == ARP_ENTRY_RETRY_CNT);
     assert(arp_find(netif, &missing) == 0);
     assert(arp_resolve(netif, &missing, make_payload()) == NET_ERR_OK);
@@ -145,12 +175,12 @@ static void test_reply_flushes_once_and_refreshes(netif_t *netif)
     assert(ipaddr_from_str(&peer, "192.168.100.11") == NET_ERR_OK);
     reset_tx_counts();
     assert(arp_resolve(netif, &peer, make_payload()) == NET_ERR_OK);
-    tick_seconds(1);
+    tick_scans(scan_count(ARP_ENTRY_PENDING_TMO));
     assert(arp_request_count == 2);
     inject_reply(netif, &peer);
     assert(ipv4_count == 1);
     assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
-    tick_seconds(1);
+    tick_scans(scan_count(ARP_ENTRY_STABLE_TMO) - 1);
     assert(ipv4_count == 1);
     assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
     arp_clear(netif);
@@ -165,16 +195,16 @@ static void test_resolved_entry_ages_and_revalidates(netif_t *netif)
     reset_tx_counts();
     inject_reply(netif, &peer);
     assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
-    tick_seconds(ARP_ENTRY_STABLE_TMO);
+    tick_scans(scan_count(ARP_ENTRY_STABLE_TMO));
     assert(arp_request_count == 1);
     assert(arp_find(netif, &peer) == 0);
     inject_reply(netif, &peer);
     assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
-    tick_seconds(1);
+    tick_scans(scan_count(ARP_ENTRY_STABLE_TMO) - 1);
     assert(memcmp(arp_find(netif, &peer), peer_mac, ETH_HWA_SIZE) == 0);
-    tick_seconds(1);
+    tick_scans(1);
     assert(arp_find(netif, &peer) == 0);
-    tick_seconds(ARP_ENTRY_RETRY_CNT);
+    tick_scans(scan_count(ARP_ENTRY_PENDING_TMO) * ARP_ENTRY_RETRY_CNT);
     assert(arp_request_count == ARP_ENTRY_RETRY_CNT + 1);
     assert_pktbuf_pool_complete();
 }
@@ -209,7 +239,8 @@ static void test_clear_releases_waiting_and_resolved(netif_t *netif)
     assert(arp_find(netif, &waiting) == 0);
     assert(arp_find(netif, &resolved) == 0);
     int requests_before = arp_request_count;
-    tick_seconds(ARP_ENTRY_STABLE_TMO + ARP_ENTRY_RETRY_CNT + 1);
+    tick_scans(scan_count(ARP_ENTRY_STABLE_TMO) +
+               scan_count(ARP_ENTRY_PENDING_TMO) * ARP_ENTRY_RETRY_CNT + 1);
     assert(arp_request_count == requests_before);
     assert_pktbuf_pool_complete();
 }
@@ -223,6 +254,14 @@ int main(void)
     assert(net_timer_init() == NET_ERR_OK);
     assert(netif_init() == NET_ERR_OK);
     assert(ether_init() == NET_ERR_OK);
+    assert(ether_register_handler(NET_PROTOCOL_ARP,
+                                  conflicting_arp_handler) == NET_ERR_OK);
+    assert(arp_init() == NET_ERR_EXIST);
+    assert(net_timer_first_tmo() == 0);
+
+    assert(net_timer_init() == NET_ERR_OK);
+    assert(netif_init() == NET_ERR_OK);
+    assert(ether_init() == NET_ERR_OK);
     assert(arp_init() == NET_ERR_OK);
 
     netif_t *netif = netif_open("arp0", &fake_ops, 0);
@@ -233,6 +272,7 @@ int main(void)
     assert(netif_set_addr(netif, &local, &mask, 0) == NET_ERR_OK);
     assert(netif_set_active(netif) == NET_ERR_OK);
 
+    test_reinit_preserves_live_cache(netif);
     test_unresolved_retries_then_releases(netif);
     test_reply_flushes_once_and_refreshes(netif);
     test_resolved_entry_ages_and_revalidates(netif);
