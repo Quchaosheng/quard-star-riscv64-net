@@ -81,6 +81,7 @@ static inline void w_tp(reg_t x)
 #define SIE_SEIE (1L << 9) // external
 #define SIE_STIE (1L << 5) // timer
 #define SIE_SSIE (1L << 1) // software
+#define SIP_SSIP (1L << 1)
 
 static inline reg_t r_sie()
 {
@@ -92,6 +93,11 @@ static inline reg_t r_sie()
 static inline void w_sie(reg_t x)
 {
   asm volatile("csrw sie, %0" : : "r" (x));
+}
+
+static inline void clear_sip(reg_t bits)
+{
+  asm volatile("csrc sip, %0" : : "r" (bits));
 }
 
 static inline reg_t r_mtime()

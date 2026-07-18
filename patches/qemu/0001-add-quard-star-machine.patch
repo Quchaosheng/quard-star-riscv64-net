@@ -41,7 +41,7 @@ new file mode 100644
 index 00000000..f7733516
 --- /dev/null
 +++ b/hw/riscv/quard_star.c
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,315 @@
 +#include "qemu/osdep.h"
 +#include "qemu/units.h"
 +#include "qemu/error-report.h"
@@ -78,6 +78,7 @@ index 00000000..f7733516
 +
 +
 +static const MemMapEntry quard_star_memmap[] = {
++    [QUARD_STAR_TEST]        = {   0x00100000,        0x1000 },
 +    [QUARD_STAR_MROM]        = {        0x0,        0x8000 },
 +    [QUARD_STAR_SRAM]        = {     0x8000,        0x8000 },
 +    [QUARD_STAR_CLINT]       = { 0x02000000,       0x10000 },
@@ -300,6 +301,7 @@ index 00000000..f7733516
 +{
 +    //创建CPU
 +    quard_star_cpu_create(machine);
++    sifive_test_create(quard_star_memmap[QUARD_STAR_TEST].base);
 +   // 创建主存
 +    quard_star_memory_create(machine);
 +    //创建flash
@@ -361,7 +363,7 @@ new file mode 100644
 index 00000000..7c7dab22
 --- /dev/null
 +++ b/include/hw/riscv/quard_star.h
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,61 @@
 +#ifndef HW_RISCV_QUARD_STAR__H
 +#define HW_RISCV_QUARD_STAR__H
 +
@@ -389,6 +391,7 @@ index 00000000..7c7dab22
 +};
 +
 +enum {
++    QUARD_STAR_TEST,
 +    QUARD_STAR_MROM,
 +    QUARD_STAR_SRAM,
 +    QUARD_STAR_CLINT,
