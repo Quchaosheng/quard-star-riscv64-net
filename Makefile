@@ -31,6 +31,7 @@ test-host:
 	./tests/host/test_m5_foundation.sh
 	./tests/host/test_m5_netif.sh
 	./tests/host/test_m5_virtio_netif.sh
+	./tests/host/test_m5_ether.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
