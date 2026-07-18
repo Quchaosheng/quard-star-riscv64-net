@@ -5,7 +5,10 @@
 
 #define IRQ_S_TIMER 5
 #define IRQ_S_EXT   9
+#define IRQ_S_SOFT  1
 #define EXC_U_ECALL 8
+
+static u32 ipi_reported;
 
 static int handle_interrupt(reg_t scause)
 {
@@ -14,6 +17,17 @@ static int handle_interrupt(reg_t scause)
 		return 0;
 	}
 	switch (cause_code) {
+	case IRQ_S_SOFT:
+		clear_sip(SIP_SSIP);
+		__atomic_store_n(&cpu_this()->need_resched, 1, __ATOMIC_RELEASE);
+#ifdef QS_M2C_TEST
+		if (!__atomic_exchange_n(&ipi_reported, 1, __ATOMIC_ACQ_REL))
+		{
+			printk("QS:IPI_OK\n");
+			m2c_mark_ipi();
+		}
+#endif
+		return 1;
 	case IRQ_S_TIMER:
 		timer_tick();
 		return 1;

@@ -105,6 +105,7 @@ VirtPageNum virt_page_num_from_size_t(uint64_t v);
 VirtPageNum floor_virts(VirtAddr virt_addr);
 
 void proc_freepagetable(PageTable* pagetable, u64 sz);
+void tlb_shootdown_all(void);
 int uvmcopy(PageTable* old, PageTable* new, u64 sz);
 
 

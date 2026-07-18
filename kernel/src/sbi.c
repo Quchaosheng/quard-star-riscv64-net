@@ -64,6 +64,19 @@ struct sbiret sbi_hart_get_status(u64 hartid)
 			 hartid, 0, 0, 0, 0, 0);
 }
 
+struct sbiret sbi_send_ipi(u64 hart_mask, u64 hart_mask_base)
+{
+	return sbi_ecall(SBI_EXT_IPI, SBI_EXT_IPI_SEND_IPI,
+			 hart_mask, hart_mask_base, 0, 0, 0, 0);
+}
+
+struct sbiret sbi_remote_sfence_vma(u64 hart_mask, u64 hart_mask_base,
+				    u64 start, u64 size)
+{
+	return sbi_ecall(SBI_EXT_RFENCE, SBI_EXT_RFENCE_REMOTE_SFENCE_VMA,
+			 hart_mask, hart_mask_base, start, size, 0, 0);
+}
+
 /**
  * sbi_set_timer() - Program the timer for next timer event.
  * @stime_value: The value after which next timer event should fire.

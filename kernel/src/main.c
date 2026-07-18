@@ -2,7 +2,10 @@
 
 void os_main(const void *fdt);
 
-#define SMP_ALLOC_ITERATIONS 10000
+#ifndef QS_ALLOC_ITERATIONS
+#define QS_ALLOC_ITERATIONS 10000
+#endif
+#define SMP_ALLOC_ITERATIONS QS_ALLOC_ITERATIONS
 #define SMP_ALLOC_TIMEOUT_TICKS 100000000ULL
 
 static u32 smp_alloc_start;
@@ -56,6 +59,9 @@ static void smp_allocator_test()
       panic("SMP allocator test");
    }
    printk("QS:SMP_ALLOC_OK\n");
+   printk("QS:STRESS_ALLOC_OPS:%d\n",
+          SMP_ALLOC_ITERATIONS * cpu_count());
+   m2c_mark_alloc();
 }
 
 static void secondary_main()
@@ -105,6 +111,7 @@ void os_main(const void *fdt)
    set_kernel_trap_entry();
 
    cpu_publish_online();
+   m2c_selftest_init();
    printk("QS:HART_ONLINE:0\n");
    cpu_start_secondaries(fdt);
    smp_allocator_test();

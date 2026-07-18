@@ -43,6 +43,11 @@
 		compatible = "simple-bus";
 		ranges;
 
+		test@100000 {
+			reg = <0 0x00100000 0 0x1000>;
+			compatible = "sifive,test1", "sifive,test0", "syscon";
+		};
+
 		uart0: uart0@10000000 {
 			interrupts = <10>;
 			interrupt-parent = <&plic>;

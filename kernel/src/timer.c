@@ -18,7 +18,7 @@ void timer_init(void)
     __atomic_store_n(&cpu->need_resched, 0, __ATOMIC_RELAXED);
 
     reg_t sie = r_sie();
-    w_sie(sie | SIE_STIE);
+    w_sie(sie | SIE_STIE | SIE_SSIE);
     set_next_trigger();
     intr_on();
 }
