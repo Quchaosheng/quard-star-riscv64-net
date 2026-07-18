@@ -32,6 +32,8 @@ SRCS_C = \
 	vsprintf.c \
 	printf.c \
 	loader.c \
+	virtqueue.c \
+	virtio_mmio.c \
 	virtio_disk.c \
 	bio.c \
 

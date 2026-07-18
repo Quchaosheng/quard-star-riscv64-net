@@ -285,7 +285,6 @@ void scheduler(void)
         intr_on();
         m2c_selftest_poll();
         spin_lock(&task_lock);
-        cpu->idle = 0;
         task_wake_expired_locked(r_mtime());
 
         struct TaskControlBlock *p = pick_runnable(cpu);
@@ -296,6 +295,7 @@ void scheduler(void)
             continue;
         }
 
+        cpu->idle = 0;
         record_migration(p, cpu);
         p->task_state = Running;
         cpu->proc = p;
