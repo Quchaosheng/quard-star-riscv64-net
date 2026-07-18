@@ -9,6 +9,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   -pthread -I"$root/kernel/include" -I"$root/kernel/include/timeros/net" \
   "$root/tests/host/test_m5_foundation.c" \
   "$root/tests/host/net_host_port.c" \
+  "$root/kernel/src/net/net_sys.c" \
   "$root/kernel/src/net/nlist.c" \
   "$root/kernel/src/net/nlocker.c" \
   "$root/kernel/src/net/mblock.c" \

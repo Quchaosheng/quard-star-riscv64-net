@@ -2,6 +2,7 @@
 #define TOS_NET_FIXQ_H__
 
 #include <timeros/net/net_err.h>
+#include <timeros/net/net_sys.h>
 #include <timeros/net/nlocker.h>
 
 typedef struct {
@@ -10,6 +11,8 @@ typedef struct {
     int in;
     int out;
     int count;
+    sys_sem_t send_sem;
+    sys_sem_t recv_sem;
     nlocker_t locker;
 } fixq_t;
 
