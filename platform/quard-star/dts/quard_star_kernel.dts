@@ -79,6 +79,20 @@
 			compatible = "google,goldfish-rtc";
 		};
 
+		virtio_block: virtio_mmio@10100000 {
+			compatible = "virtio,mmio";
+			reg = <0 0x10100000 0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <1>;
+		};
+
+		virtio_net: virtio_mmio@10101000 {
+			compatible = "virtio,mmio";
+			reg = <0 0x10101000 0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <2>;
+		};
+
 		plic: plic@c000000 {
 			riscv,ndev = <0x35>;
 			reg = <0 0x0c000000 0 0x210000>;

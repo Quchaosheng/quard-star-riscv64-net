@@ -24,6 +24,8 @@ test-host:
 	./tests/host/test_m3_virtqueue.sh
 	./tests/host/test_m3_fatfs_prepare.sh
 	./tests/host/test_m3_smoke_script.sh
+	./tests/host/test_m4_contracts.sh
+	./tests/host/test_m4_smoke_script.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
