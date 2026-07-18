@@ -1,0 +1,136 @@
+#include <timeros/net/timer.h>
+
+static nlist_t timer_list;
+
+static void timer_name_copy(char *dest, const char *src)
+{
+    int i = 0;
+
+    while (i < TIMER_NAME_SIZE - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+static void insert_timer(net_timer_t *insert)
+{
+    nlist_node_t *node;
+    nlist_node_t *pre = 0;
+
+    nlist_for_each(node, &timer_list) {
+        net_timer_t *curr = nlist_entry(node, net_timer_t, node);
+
+        if (insert->curr > curr->curr) {
+            insert->curr -= curr->curr;
+        } else if (insert->curr == curr->curr) {
+            insert->curr = 0;
+            nlist_insert_after(&timer_list, node, &insert->node);
+            return;
+        } else {
+            curr->curr -= insert->curr;
+            if (pre != 0)
+                nlist_insert_after(&timer_list, pre, &insert->node);
+            else
+                nlist_insert_first(&timer_list, &insert->node);
+            return;
+        }
+        pre = node;
+    }
+
+    nlist_insert_last(&timer_list, &insert->node);
+}
+
+net_err_t net_timer_init(void)
+{
+    nlist_init(&timer_list);
+    return NET_ERR_OK;
+}
+
+net_err_t net_timer_add(net_timer_t *timer, const char *name,
+                        timer_proc_t proc, void *arg, int ms, int flags)
+{
+    if (timer == 0 || name == 0 || proc == 0 || ms <= 0)
+        return NET_ERR_PARAM;
+
+    timer_name_copy(timer->name, name);
+    timer->flags = flags;
+    timer->curr = ms;
+    timer->reload = ms;
+    timer->proc = proc;
+    timer->arg = arg;
+    nlist_node_init(&timer->node);
+    insert_timer(timer);
+    return NET_ERR_OK;
+}
+
+void net_timer_remove(net_timer_t *timer)
+{
+    nlist_node_t *node;
+
+    if (timer == 0)
+        return;
+
+    nlist_for_each(node, &timer_list) {
+        net_timer_t *curr = nlist_entry(node, net_timer_t, node);
+
+        if (curr == timer) {
+            nlist_node_t *next = nlist_node_next(node);
+
+            if (next != 0) {
+                net_timer_t *next_timer =
+                    nlist_entry(next, net_timer_t, node);
+                next_timer->curr += curr->curr;
+            }
+            nlist_remove(&timer_list, node);
+            return;
+        }
+    }
+}
+
+net_err_t net_timer_check_tmo(int diff_ms)
+{
+    nlist_t wait_list;
+    nlist_node_t *node;
+
+    if (diff_ms < 0)
+        return NET_ERR_PARAM;
+
+    nlist_init(&wait_list);
+    node = nlist_first(&timer_list);
+    while (node != 0) {
+        nlist_node_t *next = nlist_node_next(node);
+        net_timer_t *timer = nlist_entry(node, net_timer_t, node);
+
+        if (timer->curr > diff_ms) {
+            timer->curr -= diff_ms;
+            break;
+        }
+
+        diff_ms -= timer->curr;
+        timer->curr = 0;
+        nlist_remove(&timer_list, node);
+        nlist_insert_last(&wait_list, node);
+        node = next;
+    }
+
+    while ((node = nlist_remove_first(&wait_list)) != 0) {
+        net_timer_t *timer = nlist_entry(node, net_timer_t, node);
+
+        timer->proc(timer, timer->arg);
+        if ((timer->flags & NET_TIMER_RELOAD) != 0) {
+            timer->curr = timer->reload;
+            insert_timer(timer);
+        }
+    }
+    return NET_ERR_OK;
+}
+
+int net_timer_first_tmo(void)
+{
+    nlist_node_t *node = nlist_first(&timer_list);
+
+    if (node == 0)
+        return 0;
+    return nlist_entry(node, net_timer_t, node)->curr;
+}

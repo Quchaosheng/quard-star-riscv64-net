@@ -30,6 +30,7 @@ test-host:
 	./tests/host/test_m4_smoke_script.sh
 	./tests/host/test_m5_foundation.sh
 	./tests/host/test_m6_runtime.sh
+	./tests/host/test_m6_timer.sh
 	./tests/host/test_m5_netif.sh
 	./tests/host/test_m5_virtio_netif.sh
 	./tests/host/test_m5_ether.sh
