@@ -1,376 +1,417 @@
 #include <timeros/os.h>
 
-static int _current = 0;
-static int _top = 0;
+#define SMP_SCHED_MIGRATIONS 100
 
-int nextpid = 0;
-
+static struct spinlock task_lock;
+static int task_count;
+static int nextpid;
+static u64 migration_count;
+static int migration_reported;
 
 struct TaskControlBlock tasks[MAX_TASKS];
 
+static void task_first_run(void)
+{
+    spin_unlock(&task_lock);
+    trap_return();
+}
 
-struct TaskContext tcx_init(reg_t kstack_ptr) {
+static struct TaskContext tcx_init(reg_t kstack_ptr)
+{
     struct TaskContext task_ctx;
 
-    task_ctx.ra = (reg_t)(uintptr_t)trap_return;
+    memset(&task_ctx, 0, sizeof(task_ctx));
+    task_ctx.ra = (reg_t)(uintptr_t)task_first_run;
     task_ctx.sp = kstack_ptr;
-    task_ctx.s0 = 0;
-    task_ctx.s1 = 0;
-    task_ctx.s2 = 0;
-    task_ctx.s3 = 0;
-    task_ctx.s4 = 0;
-    task_ctx.s5 = 0;
-    task_ctx.s6 = 0;
-    task_ctx.s7 = 0;
-    task_ctx.s8 = 0;
-    task_ctx.s9 = 0;
-    task_ctx.s10 = 0;
-    task_ctx.s11 = 0;
-
     return task_ctx;
 }
 
-void procinit()
+static int allocpid_locked(void)
 {
-  struct TaskControlBlock *p;
-  for(p = tasks; p < &tasks[MAX_TASKS]; p++)
-  {
-    p->task_state = UnInit;
-  }
+    return nextpid++;
 }
 
-/* 为每个应用程序映射内核栈,内核空间以及进行了映射 */
-void proc_mapstacks(PageTable* kpgtbl)
+int allocpid(void)
 {
-  struct TaskControlBlock *p;
-
-  for(p = tasks; p < &tasks[MAX_TASKS]; p++) {
-    char *pa = (char*)phys_addr_from_phys_page_num(kalloc()).value;
-    if(pa == 0)
-      panic("kalloc");
-    u64 va = KSTACK((int) (p - tasks));
-    PageTable_map(kpgtbl, virt_addr_from_size_t(va ), phys_addr_from_size_t((u64)pa), \
-                  PAGE_SIZE, PTE_R | PTE_W);
-    // 给应用内核栈赋值
-    p->kstack = va +  PAGE_SIZE;
-  }
+    spin_lock(&task_lock);
+    int pid = allocpid_locked();
+    spin_unlock(&task_lock);
+    return pid;
 }
 
-
-/* 为每个应用程序分配一页内存用与存放trap，同时初始化任务上下文 */
-void proc_trap(struct TaskControlBlock *p)
+void procinit(void)
 {
-  PhysPageNum ppn = kalloc();
-  if (ppn.value == 0) {
-    panic("proc_trap: out of memory");
-  }
-  p->trap_cx_ppn = phys_addr_from_phys_page_num(ppn).value;
-  memset(&p->task_context, 0 ,sizeof(p->task_context));
+    spin_init(&task_lock);
+    task_count = 0;
+    nextpid = 0;
+    migration_count = 0;
+    migration_reported = 0;
+
+    for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
+        p->task_state = UnInit;
+        p->last_hart = -1;
+    }
+}
+
+void proc_mapstacks(PageTable *kpgtbl)
+{
+    for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
+        PhysPageNum ppn = kalloc();
+        if (ppn.value == 0)
+            panic("proc_mapstacks: out of memory");
+        u64 va = KSTACK((int)(p - tasks));
+        PageTable_map(kpgtbl, virt_addr_from_size_t(va),
+                      phys_addr_from_phys_page_num(ppn), PAGE_SIZE,
+                      PTE_R | PTE_W);
+        p->kstack = va + PAGE_SIZE;
+    }
+}
+
+static void proc_trap(struct TaskControlBlock *p)
+{
+    PhysPageNum ppn = kalloc();
+    if (ppn.value == 0)
+        panic("proc_trap: out of memory");
+    p->trap_cx_ppn = phys_addr_from_phys_page_num(ppn).value;
+    memset(&p->task_context, 0, sizeof(p->task_context));
 }
 
 extern char trampoline[];
-void proc_pagetable(struct TaskControlBlock *p)
-{
-  PageTable pagetable;
-  pagetable.root_ppn = kalloc();
-  if (pagetable.root_ppn.value == 0) {
-    panic("proc_pagetable: out of memory");
-  }
 
-  PageTable_map(&pagetable,virt_addr_from_size_t(TRAMPOLINE),phys_addr_from_size_t((u64)trampoline),\
-                PAGE_SIZE , PTE_R | PTE_X);
-  PageTable_map(&pagetable,virt_addr_from_size_t(TRAPFRAME),phys_addr_from_size_t(p->trap_cx_ppn), \
-                PAGE_SIZE, PTE_R | PTE_W );
-  p->pagetable = pagetable;
+static void proc_pagetable(struct TaskControlBlock *p)
+{
+    PageTable pagetable;
+    pagetable.root_ppn = kalloc();
+    if (pagetable.root_ppn.value == 0)
+        panic("proc_pagetable: out of memory");
+
+    PageTable_map(&pagetable, virt_addr_from_size_t(TRAMPOLINE),
+                  phys_addr_from_size_t((u64)(uintptr_t)trampoline), PAGE_SIZE,
+                  PTE_R | PTE_X);
+    PageTable_map(&pagetable, virt_addr_from_size_t(TRAPFRAME),
+                  phys_addr_from_size_t(p->trap_cx_ppn), PAGE_SIZE,
+                  PTE_R | PTE_W);
+    p->pagetable = pagetable;
 }
 
 void proc_ustack(struct TaskControlBlock *p)
 {
     PhysPageNum ppn = kalloc();
-    if (ppn.value == 0) {
-      panic("proc_ustack: out of memory");
-    }
+    if (ppn.value == 0)
+        panic("proc_ustack: out of memory");
     u64 paddr = phys_addr_from_phys_page_num(ppn).value;
-    PageTable_map(&p->pagetable,virt_addr_from_size_t(p->ustack - PAGE_SIZE),phys_addr_from_size_t(paddr), \
-                  PAGE_SIZE, PTE_R | PTE_W | PTE_U);
+    PageTable_map(&p->pagetable,
+                  virt_addr_from_size_t(p->ustack - PAGE_SIZE),
+                  phys_addr_from_size_t(paddr), PAGE_SIZE,
+                  PTE_R | PTE_W | PTE_U);
 }
 
-TaskControlBlock* task_create_pt(size_t app_id)
+TaskControlBlock *task_create_pt(size_t app_id)
 {
-  if(_top < MAX_TASKS)
-  {
+    if (app_id >= MAX_TASKS)
+        panic("task_create_pt: invalid app id");
 
-    //为应用程序分配一页内存用与存放trap
-    proc_trap(&tasks[app_id]);   //
-    //为用户程序创建页表，映射跳板页和trap上下文页
-    proc_pagetable(&tasks[app_id]);
-    _top++;
-  }
+    struct TaskControlBlock *p = &tasks[app_id];
+    spin_lock(&task_lock);
+    if (p->task_state != UnInit) {
+        spin_unlock(&task_lock);
+        panic("task_create_pt: task already used");
+    }
+    p->task_state = Creating;
+    p->last_hart = -1;
+    spin_unlock(&task_lock);
 
-  return &tasks[app_id];
+    proc_trap(p);
+    proc_pagetable(p);
+    return p;
 }
 
 extern u64 kernel_satp;
+
 void app_init(size_t app_id)
 {
-    TrapContext* cx_ptr = (TrapContext*)tasks[app_id].trap_cx_ppn;
+    struct TaskControlBlock *p = &tasks[app_id];
+    TrapContext *cx_ptr = (TrapContext *)(uintptr_t)p->trap_cx_ppn;
     reg_t sstatus = r_sstatus();
-    // 设置 sstatus 寄存器第8位即SPP位为0 表示为U模式
     sstatus &= ~SSTATUS_SPP;
     sstatus |= SSTATUS_SPIE;
-    w_sstatus(sstatus);
-    // 设置程序入口地址
-    cx_ptr->sepc = tasks[app_id].entry;
-    //
+
+    cx_ptr->sepc = p->entry;
     cx_ptr->sstatus = sstatus;
-    // 设置用户栈虚拟地址
-    cx_ptr->sp = tasks[app_id].ustack;
-    // 设置内核页表token
+    cx_ptr->sp = p->ustack;
     cx_ptr->kernel_satp = kernel_satp;
-    // 设置内核栈虚拟地址
-    cx_ptr->kernel_sp = tasks[app_id].kstack;
-    // 设置内核trap_handler的地址
-    cx_ptr->trap_handler = (u64)trap_handler;
+    cx_ptr->kernel_sp = p->kstack;
+    cx_ptr->trap_handler = (u64)(uintptr_t)trap_handler;
+    p->task_context = tcx_init((reg_t)p->kstack);
 
-    /* 构造每个任务任务控制块中的任务上下文，设置 ra 寄存器为 trap_return 的入口地址*/
-    tasks[app_id].task_context = tcx_init((reg_t)tasks[app_id].kstack);
-    // 初始化 TaskStatus 字段为 Ready
-    tasks[app_id].task_state = Ready;
-    /* 分配pid值 */
-    tasks[app_id].pid = allocpid();
-}
-
-/* 返回当前执行的应用程序的trap上下文的地址 */
-u64 get_current_trap_cx()
-{
-  return tasks[_current].trap_cx_ppn;
-}
-/* 返回当前执行的应用程序的satp token*/
-u64 current_user_token()
-{
-   return MAKE_SATP(tasks[_current].pagetable.root_ppn.value);
-}
-
-void schedule()
-{
-	if (_top <= 0) {
-		panic("Num of task should be greater than zero!\n");
-		return;
-	}
-
-    int next = -1;
-    for (int i = 1; i <= MAX_TASKS; i++) {
-        int idx = (_current + i) % MAX_TASKS;
-        if (tasks[idx].task_state == Ready || tasks[idx].task_state == Running) {
-            next = idx;
-            break;
-        }
+    spin_lock(&task_lock);
+    if (p->task_state != Creating) {
+        spin_unlock(&task_lock);
+        panic("app_init: task not reserved");
     }
+    p->pid = allocpid_locked();
+    p->task_state = Ready;
+    task_count++;
+    spin_unlock(&task_lock);
+}
 
-    if (next < 0 || next == _current) {
-        return;
+struct TaskControlBlock *current_proc(void)
+{
+    struct TaskControlBlock *p = cpu_this()->proc;
+    if (p == 0)
+        panic("current_proc: no running process");
+    return p;
+}
+
+u64 get_current_trap_cx(void)
+{
+    return current_proc()->trap_cx_ppn;
+}
+
+u64 current_user_token(void)
+{
+    return MAKE_SATP(current_proc()->pagetable.root_ppn.value);
+}
+
+static int other_cpu_idle(u64 hartid)
+{
+    for (int i = 0; i < MAX_CPUS; i++) {
+        if ((u64)i != hartid && cpus[i].present && cpus[i].online &&
+            cpus[i].idle)
+            return 1;
     }
-
-    struct TaskContext *current_task_cx_ptr = &(tasks[_current].task_context);
-    struct TaskContext *next_task_cx_ptr = &(tasks[next].task_context);
-    if (tasks[_current].task_state == Running) {
-        tasks[_current].task_state = Ready;
-    }
-    tasks[next].task_state = Running;
-    _current = next;
-    __switch(current_task_cx_ptr, next_task_cx_ptr);
-}
-
-void run_first_task()
-{
-    tasks[0].task_state = Running;
-    struct TaskContext *next_task_cx_ptr = &(tasks[0].task_context);
-    struct TaskContext _unused ;
-    __switch(&_unused,next_task_cx_ptr);
-    panic("unreachable in run_first_task!");
-}
-
-struct TaskControlBlock* current_proc()
-{
-  return &tasks[_current];
-}
-
-int allocpid()
-{
-  int pid;
-  pid = nextpid;
-  nextpid = nextpid + 1;
-  return pid;
-}
-
-struct TaskControlBlock* allocproc()
-{
-  struct TaskControlBlock* p;
-  for(p = tasks; p < &tasks[MAX_TASKS]; p++)
-  {
-    if(p->task_state == UnInit)
-    {
-      goto found;
-    }
-  }
-  return 0;
-
-found:
-      p->pid = allocpid();
-      p->task_state = Ready;
-      // 为每个应用程序分配一页内存用与存放trap，同时初始化任务上下文
-      proc_trap(p);
-      // 为用户程序创建页表，映射跳板页和trap上下文页
-      proc_pagetable(p);
-  return p;
-}
-
-int __sys_fork()
-{
-  struct TaskControlBlock* np;
-  struct TaskControlBlock* p = current_proc();
-  // Allocate process.
-  if((np = allocproc()) == 0){
-    return -1;
-  }
-
-  // 拷贝父进程的内存数据，根据页表查找物理页拷贝
-  uvmcopy(&p->pagetable,&np->pagetable,p->base_size);
-
-  // 拷贝父进程的trap页数据
-  memcpy((void*)np->trap_cx_ppn,(void*)p->trap_cx_ppn,PAGE_SIZE);
-
-  // 子进程返回值为0
-  TrapContext* cx_ptr = (TrapContext*)np->trap_cx_ppn;
-  cx_ptr->a0 = 0;
-  cx_ptr->kernel_sp = np->kstack;
-  // 复制TCB的信息
-  np->entry = p->entry;
-  np->base_size = p->base_size;
-  np->parent = p;
-  np->ustack = p->ustack;
-
-  np->task_context = tcx_init((reg_t)np->kstack);
-
-  _top++;
-  printk("sys_fork:%d\n",_top);
-  return np->pid;
-}
-
-
-
-int exec(const char* name)
-{
-
-    AppMetadata metadata = get_app_data_by_name(name);
-    if(metadata.id<0)
-    {
-      return -1;
-    }
-    //ELF 文件头
-    elf64_ehdr_t *ehdr = (elf64_ehdr_t *)(uintptr_t)metadata.start;
-    elf_check(ehdr);
-
-    struct TaskControlBlock* proc = current_proc();
-    printk("trap frame1:%lx\n",proc->trap_cx_ppn);
-    PageTable old_pagetable = proc->pagetable;
-    u64 oldsz = proc->base_size;
-    //重新分配页表
-    proc_pagetable(proc);
-    printk("trap frame2:%lx\n",proc->trap_cx_ppn);
-    //加载程序段
-    load_segment(ehdr,proc);
-    //映射应用程序用户栈开始地址
-    proc_ustack(proc);
-
-    TrapContext* cx_ptr = (TrapContext*)proc->trap_cx_ppn;
-    cx_ptr->sepc = (u64)ehdr->e_entry;
-    cx_ptr->sp = proc->ustack;
-
-
-
-    proc_freepagetable(&old_pagetable,oldsz);
-    printk("sys_exec\n");
     return 0;
 }
 
+static struct TaskControlBlock *pick_runnable(struct cpu *cpu)
+{
+    struct TaskControlBlock *fallback = 0;
 
-void freeproc(struct TaskControlBlock* p)
+    for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
+        if (p->task_state != Ready)
+            continue;
+        if (p->last_hart >= 0 && (u64)p->last_hart != cpu->hartid)
+            return p;
+        if (fallback == 0)
+            fallback = p;
+    }
+
+    if (fallback != 0 && fallback->last_hart == (int)cpu->hartid &&
+        other_cpu_idle(cpu->hartid))
+        return 0;
+    return fallback;
+}
+
+static void record_migration(struct TaskControlBlock *p, struct cpu *cpu)
+{
+    if (p->last_hart >= 0 && (u64)p->last_hart != cpu->hartid) {
+        migration_count++;
+        if (!migration_reported && migration_count >= SMP_SCHED_MIGRATIONS) {
+            migration_reported = 1;
+            printk("QS:SMP_SCHED_OK\n");
+            printk("QS:TEST_PASS:m2b-smoke\n");
+        }
+    }
+    p->last_hart = (int)cpu->hartid;
+}
+
+void scheduler(void)
+{
+    struct cpu *cpu = cpu_this();
+    cpu->proc = 0;
+
+    for (;;) {
+        intr_on();
+        spin_lock(&task_lock);
+        cpu->idle = 0;
+
+        struct TaskControlBlock *p = pick_runnable(cpu);
+        if (p == 0) {
+            cpu->idle = 1;
+            spin_unlock(&task_lock);
+            asm volatile("wfi");
+            continue;
+        }
+
+        record_migration(p, cpu);
+        p->task_state = Running;
+        cpu->proc = p;
+        __atomic_store_n(&cpu->need_resched, 0, __ATOMIC_RELAXED);
+        __switch(&cpu->scheduler_context, &p->task_context);
+        cpu->proc = 0;
+        spin_unlock(&task_lock);
+    }
+}
+
+void schedule(void)
+{
+    struct cpu *cpu = cpu_this();
+    struct TaskControlBlock *p = current_proc();
+
+    spin_lock(&task_lock);
+    if (p->task_state != Running) {
+        spin_unlock(&task_lock);
+        panic("schedule: process is not running");
+    }
+    p->task_state = Ready;
+    __atomic_store_n(&cpu->need_resched, 0, __ATOMIC_RELAXED);
+    __switch(&p->task_context, &cpu->scheduler_context);
+    spin_unlock(&task_lock);
+}
+
+void run_first_task(void)
+{
+    scheduler();
+}
+
+struct TaskControlBlock *allocproc(void)
+{
+    struct TaskControlBlock *p = 0;
+
+    spin_lock(&task_lock);
+    for (struct TaskControlBlock *candidate = tasks;
+         candidate < &tasks[MAX_TASKS]; candidate++) {
+        if (candidate->task_state == UnInit) {
+            p = candidate;
+            p->task_state = Creating;
+            p->pid = allocpid_locked();
+            p->last_hart = -1;
+            break;
+        }
+    }
+    spin_unlock(&task_lock);
+
+    if (p == 0)
+        return 0;
+    proc_trap(p);
+    proc_pagetable(p);
+    return p;
+}
+
+int __sys_fork(void)
+{
+    struct TaskControlBlock *p = current_proc();
+    struct TaskControlBlock *np = allocproc();
+    if (np == 0)
+        return -1;
+
+    uvmcopy(&p->pagetable, &np->pagetable, p->base_size);
+    memcpy((void *)(uintptr_t)np->trap_cx_ppn,
+           (void *)(uintptr_t)p->trap_cx_ppn, PAGE_SIZE);
+
+    TrapContext *cx_ptr = (TrapContext *)(uintptr_t)np->trap_cx_ppn;
+    cx_ptr->a0 = 0;
+    cx_ptr->kernel_sp = np->kstack;
+    np->entry = p->entry;
+    np->base_size = p->base_size;
+    np->ustack = p->ustack;
+    np->task_context = tcx_init((reg_t)np->kstack);
+
+    spin_lock(&task_lock);
+    np->parent = p;
+    np->task_state = Ready;
+    task_count++;
+    int pid = np->pid;
+    spin_unlock(&task_lock);
+    return pid;
+}
+
+int exec(const char *name)
+{
+    AppMetadata metadata = get_app_data_by_name(name);
+    if (metadata.id < 0)
+        return -1;
+
+    elf64_ehdr_t *ehdr = (elf64_ehdr_t *)(uintptr_t)metadata.start;
+    elf_check(ehdr);
+    struct TaskControlBlock *proc = current_proc();
+    PageTable old_pagetable = proc->pagetable;
+    u64 oldsz = proc->base_size;
+
+    proc_pagetable(proc);
+    load_segment(ehdr, proc);
+    proc_ustack(proc);
+
+    TrapContext *cx_ptr = (TrapContext *)(uintptr_t)proc->trap_cx_ppn;
+    cx_ptr->sepc = (u64)ehdr->e_entry;
+    cx_ptr->sp = proc->ustack;
+    proc_freepagetable(&old_pagetable, oldsz);
+    return 0;
+}
+
+static void freeproc_locked(struct TaskControlBlock *p)
 {
     proc_freepagetable(&p->pagetable, p->base_size);
     if (p->trap_cx_ppn != 0) {
-      kfree(floor_phys(phys_addr_from_size_t(p->trap_cx_ppn)));
-      p->trap_cx_ppn = 0;
+        kfree(floor_phys(phys_addr_from_size_t(p->trap_cx_ppn)));
+        p->trap_cx_ppn = 0;
     }
 
     p->pagetable.root_ppn.value = 0;
     p->base_size = 0;
-    p->parent =  0;
+    p->parent = 0;
     p->ustack = 0;
     p->entry = 0;
-    p->task_state = UnInit;
     p->exit_code = 0;
+    p->last_hart = -1;
+    p->task_state = UnInit;
 }
 
-//将当前进程的所有子进程挂在初始进程 initproc 下面
-void children_proc_clear(struct TaskControlBlock *p)
+void freeproc(struct TaskControlBlock *p)
 {
-  struct TaskControlBlock *children;
-  for(children = tasks; children < &tasks[MAX_TASKS]; children++)
-  {
-    if(children->parent == p)
-    {
-      children->parent = &tasks[0];
+    spin_lock(&task_lock);
+    freeproc_locked(p);
+    spin_unlock(&task_lock);
+}
+
+static void children_proc_clear_locked(struct TaskControlBlock *p)
+{
+    for (struct TaskControlBlock *child = tasks;
+         child < &tasks[MAX_TASKS]; child++) {
+        if (child->parent == p)
+            child->parent = &tasks[0];
     }
-  }
 }
 
 void exit_current_and_run_next(u64 exit_code)
 {
-  /* 不能把0号进程干掉了 */
-  struct TaskControlBlock* p = current_proc();
-  if(p->pid == 0)
-  {
-    panic("init exiting");
-  }
+    struct cpu *cpu = cpu_this();
+    struct TaskControlBlock *p = current_proc();
+    if (p->pid == 0)
+        panic("init exiting");
 
-  p->exit_code = exit_code;
-  p->task_state = Zombie;
-  children_proc_clear(p);
-  _top--;
-  schedule();
-  panic("zombie exit");
+    spin_lock(&task_lock);
+    p->exit_code = exit_code;
+    p->task_state = Zombie;
+    children_proc_clear_locked(p);
+    task_count--;
+    __switch(&p->task_context, &cpu->scheduler_context);
+    panic("zombie exit");
 }
 
-
-int wait()
+int wait(void)
 {
-  struct TaskControlBlock *children;
-  struct TaskControlBlock* p = current_proc();
-  int pid,havekids;
-  printk("debug wait\n");
-  for(;;)
-  {
-    havekids = 0;
-    for(children = tasks; children < &tasks[MAX_TASKS];children++)
-    {
-      if(children->parent == p)
-      {
-        havekids = 1;
-        if(children->task_state == Zombie)
-        {
-          pid = children->pid;
-          freeproc(children);
-          printk("child pid:%d\n",pid);
-          return pid;
+    struct TaskControlBlock *p = current_proc();
+
+    for (;;) {
+        int havekids = 0;
+        spin_lock(&task_lock);
+        for (struct TaskControlBlock *child = tasks;
+             child < &tasks[MAX_TASKS]; child++) {
+            if (child->parent != p)
+                continue;
+            havekids = 1;
+            if (child->task_state == Zombie) {
+                int pid = child->pid;
+                freeproc_locked(child);
+                spin_unlock(&task_lock);
+                return pid;
+            }
         }
-      }
+        spin_unlock(&task_lock);
+
+        if (!havekids)
+            return -1;
+        schedule();
     }
-    // 如果此进程没有子进程，则返回 -1
-    if(!havekids)
-    {
-      return -1;
-    }
-    schedule();
-  }
 }

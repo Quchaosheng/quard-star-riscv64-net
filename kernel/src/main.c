@@ -8,6 +8,7 @@ void os_main(const void *fdt);
 static u32 smp_alloc_start;
 static u32 smp_alloc_done;
 static u32 smp_alloc_failed;
+static u32 smp_sched_start;
 
 static void smp_allocator_worker()
 {
@@ -65,9 +66,10 @@ static void secondary_main()
    while (!__atomic_load_n(&smp_alloc_start, __ATOMIC_ACQUIRE))
       asm volatile("nop");
    smp_allocator_worker();
-   for (;;) {
-      asm volatile("wfi");
-   }
+   while (!__atomic_load_n(&smp_sched_start, __ATOMIC_ACQUIRE))
+      asm volatile("nop");
+   timer_init();
+   scheduler();
 }
 
 void kernel_entry(u64 hartid, const void *fdt)
@@ -117,6 +119,7 @@ void os_main(const void *fdt)
    else
       printk("QS:TEST_PASS:m1-smoke\n");
 
-   run_first_task();
+   __atomic_store_n(&smp_sched_start, 1, __ATOMIC_RELEASE);
+   scheduler();
 
 }

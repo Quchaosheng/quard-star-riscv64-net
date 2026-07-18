@@ -36,8 +36,10 @@ extern void __switch(TaskContext *current_task_cx_ptr,TaskContext* next_task_cx_
 
 /* timer.c */
 void sbi_set_timer(uint64_t stime_value);
-void timer_init();
-void set_next_trigger();
+void timer_init(void);
+void set_next_trigger(void);
+void timer_tick(void);
+int cpu_take_resched(void);
 extern uint64_t get_time_us();
 
 #endif /* __OS_H__ */
