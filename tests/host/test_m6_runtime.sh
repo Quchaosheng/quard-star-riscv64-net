@@ -16,6 +16,6 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/mblock.c" \
   "$root/kernel/src/net/fixq.c" \
   -o "$tmp/test_m6_runtime"
-"$tmp/test_m6_runtime"
+timeout 15s "$tmp/test_m6_runtime"
 
 echo 'PASS: M6 network runtime time and semaphore behavior'
