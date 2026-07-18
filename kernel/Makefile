@@ -40,7 +40,7 @@ SRCS_C = \
 	virtio_disk.c \
 	bio.c \
 
-INCLUDE := -I./include -I../third_party/dtc/libfdt
+INCLUDE := -I./include -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
 SRCS_C += fatfs_port.c fatfs_test.c
 INCLUDE += -I$(FATFS_DIR)

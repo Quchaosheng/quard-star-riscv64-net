@@ -18,7 +18,9 @@ void plic_init_hart(void)
 {
     u64 context = supervisor_context();
     *PLIC_PRIORITY(PLIC_VIRTIO0_IRQ) = 1;
-    *PLIC_ENABLE(context) = 1U << PLIC_VIRTIO0_IRQ;
+    *PLIC_PRIORITY(PLIC_VIRTIO1_IRQ) = 1;
+    *PLIC_ENABLE(context) = (1U << PLIC_VIRTIO0_IRQ) |
+                            (1U << PLIC_VIRTIO1_IRQ);
     *PLIC_THRESHOLD(context) = 0;
 }
 
