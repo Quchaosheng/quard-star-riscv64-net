@@ -10,6 +10,11 @@ timeout=${QS_SMOKE_TIMEOUT:-30}
 kernel_log=$out/kernel.log
 qemu_log=$out/qemu.err
 combined=$out/qemu.log
+extra_markers=${QS_EXTRA_MARKERS:-}
+
+has_exact_marker() {
+  tr -d '\000\r' < "$combined" | grep -Fxq "$1"
+}
 
 has_success_markers() {
   grep -q 'QS:BOOT_OK' "$combined" 2>/dev/null &&
@@ -23,7 +28,10 @@ has_success_markers() {
     grep -q 'QS:SEM_TIMEOUT_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:IPI_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:RFENCE_OK' "$combined" 2>/dev/null &&
-    grep -q "QS:TEST_PASS:$test_name" "$combined" 2>/dev/null
+    grep -q "QS:TEST_PASS:$test_name" "$combined" 2>/dev/null || return 1
+  for marker in $extra_markers; do
+    has_exact_marker "$marker" || return 1
+  done
 }
 
 for file in "$qemu" "$out/fw/fw.bin" "$out/disk/disk.img"; do
@@ -76,7 +84,8 @@ if [ "$qemu_status" -eq 0 ] && has_success_markers &&
   success=1
 fi
 
-if [ "$test_name" = m2c-stress ]; then
+case "$test_name" in
+*-stress)
   grep -q 'QS:STRESS_ALLOC_OPS:100000' "$combined" 2>/dev/null || success=0
   grep -q 'QS:STRESS_MIGRATIONS:10000' "$combined" 2>/dev/null || success=0
   elapsed=$(tr -d '\000\r' < "$combined" | \
@@ -84,21 +93,28 @@ if [ "$test_name" = m2c-stress ]; then
   if [ -z "$elapsed" ] || [ "$elapsed" -lt 1200000000 ]; then
     success=0
   fi
-fi
+  ;;
+esac
 
 if [ "$success" -ne 1 ]; then
   if [ "$qemu_status" -ne 0 ]; then
     echo "error: QEMU guest exit status $qemu_status" >&2
   fi
-  if [ "$test_name" = m2c-stress ]; then
+  case "$test_name" in
+  *-stress)
     echo "error: stress counters or minimum duration not satisfied" >&2
-  fi
+    ;;
+  esac
   for marker in QS:BOOT_OK QS:KERNEL_READY QS:BLOCK_OK \
     QS:HART_ONLINE:0 QS:HART_ONLINE:1 QS:SMP_ALLOC_OK QS:SMP_SCHED_OK \
     QS:WAIT_OK QS:SEM_TIMEOUT_OK QS:IPI_OK QS:RFENCE_OK \
     "QS:TEST_PASS:$test_name"
   do
     grep -q "$marker" "$combined" 2>/dev/null || \
+      echo "error: missing $marker" >&2
+  done
+  for marker in $extra_markers; do
+    has_exact_marker "$marker" || \
       echo "error: missing $marker" >&2
   done
   cat "$combined" >&2

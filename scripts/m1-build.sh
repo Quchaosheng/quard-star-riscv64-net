@@ -8,6 +8,7 @@ cache=${QS_BUILD_CACHE:-$HOME/.cache/quard-star-riscv64-net/m1}
 sbi_dts=${QS_SBI_DTS:-$root/platform/quard-star/dts/quard_star_sbi.dts}
 kernel_dts=${QS_KERNEL_DTS:-$root/platform/quard-star/dts/quard_star_kernel.dts}
 kernel_cppflags=${QS_KERNEL_CPPFLAGS:-}
+kernel_fatfs=${QS_KERNEL_FATFS:-0}
 
 prepare_tree() {
   name=$1
@@ -51,7 +52,7 @@ make -C "$opensbi_src" CROSS_COMPILE=riscv64-unknown-elf- PLATFORM=quard_star
 cp "$opensbi_src/build/platform/quard_star/firmware/fw_jump.bin" "$out/opensbi/"
 
 make -C "$root/kernel" clean
-make -C "$root/kernel" all CPPFLAGS="$kernel_cppflags"
+make -C "$root/kernel" all CPPFLAGS="$kernel_cppflags" FATFS="$kernel_fatfs"
 cp "$root/kernel/os.bin" "$out/kernel/"
 
 make -C "$root/trusted" clean
