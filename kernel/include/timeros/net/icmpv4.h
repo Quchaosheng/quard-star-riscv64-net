@@ -27,8 +27,8 @@ typedef struct _icmpv4_stats_t {
 
 net_err_t icmpv4_init(void);
 void icmpv4_get_stats(icmpv4_stats_t *stats);
-net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
-                    const ipaddr_t *dest, pktbuf_t *buf);
+net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src, const ipaddr_t *dest,
+                    pktbuf_t *buf);
 net_err_t icmpv4_out_echo(netif_t *netif, const ipaddr_t *dest,
                           uint16_t identifier, uint16_t sequence,
                           const uint8_t *payload, int payload_len);

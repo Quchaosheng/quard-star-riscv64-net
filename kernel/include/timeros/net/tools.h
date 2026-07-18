@@ -41,6 +41,7 @@ static inline u16 checksum16(u32 offset, void *buf, u16 len,
 {
     const u8 *data = (const u8 *)buf;
     u32 sum = pre_sum;
+
     for (u32 i = 0; i < len; i++) {
         if (((offset + i) & 1U) == 0)
             sum += (u32)data[i] << 8;
@@ -48,7 +49,7 @@ static inline u16 checksum16(u32 offset, void *buf, u16 len,
             sum += data[i];
         sum = net_checksum_fold(sum);
     }
-    return complement ? (u16)~sum : (u16)sum;
+    return complement ? (u16) ~sum : (u16)sum;
 }
 
 static inline u16 net_checksum16(const u8 *data, u32 length, u32 sum)

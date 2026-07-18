@@ -83,10 +83,43 @@ static void test_pktbuf_across_blocks(void)
     pktbuf_free(buf);
 }
 
+static void test_pktbuf_boundaries(void)
+{
+    assert(pktbuf_alloc(-1) == 0);
+
+    pktbuf_t *buf = pktbuf_alloc(4);
+    assert(buf != 0);
+    assert(pktbuf_resize(buf, -1) == NET_ERR_PARAM);
+    assert(pktbuf_add_header(buf, -1, 1) == NET_ERR_PARAM);
+    assert(pktbuf_remove_header(buf, 5) == NET_ERR_SIZE);
+    assert(pktbuf_write(buf, 0, -1) == NET_ERR_PARAM);
+    assert(pktbuf_read(buf, 0, -1) == NET_ERR_PARAM);
+    assert(pktbuf_fill(buf, 0, -1) == NET_ERR_PARAM);
+    assert(pktbuf_copy(buf, buf, -1) == NET_ERR_PARAM);
+    assert(pktbuf_set_cont(buf, -1) == NET_ERR_PARAM);
+    assert(pktbuf_seek(buf, 4) == NET_ERR_OK);
+    pktbuf_free(buf);
+
+    buf = pktbuf_alloc(0);
+    assert(buf != 0);
+    assert(pktbuf_add_header(buf, 8, 1) == NET_ERR_OK);
+    assert(pktbuf_fill(buf, 0x5a, 8) == NET_ERR_OK);
+    assert(pktbuf_seek(buf, 8) == NET_ERR_OK);
+    assert(pktbuf_resize(buf, 0) == NET_ERR_OK);
+    assert(pktbuf_total(buf) == 0);
+    assert(pktbuf_write(buf, 0, 0) == NET_ERR_OK);
+    assert(pktbuf_read(buf, 0, 0) == NET_ERR_OK);
+    assert(pktbuf_fill(buf, 0, 0) == NET_ERR_OK);
+    assert(pktbuf_join(buf, buf) == NET_ERR_PARAM);
+    pktbuf_free(buf);
+    pktbuf_free(0);
+}
+
 int main(void)
 {
     test_nlist_and_mblock();
     test_fixq();
     test_pktbuf_across_blocks();
+    test_pktbuf_boundaries();
     return 0;
 }

@@ -50,7 +50,7 @@ static void net_stack_probe_fail(int code)
     printk("QS:TEST_FAIL:m5-net:%d\n", code);
     *(volatile u32 *)(uintptr_t)QEMU_TEST_BASE = QEMU_TEST_FAIL;
     for (;;)
-        asm volatile("wfi");
+        asm volatile ("wfi");
 }
 
 static void net_stack_probe(netif_t *netif)
@@ -80,7 +80,7 @@ static void net_stack_probe(netif_t *netif)
     icmpv4_stats_t stats;
     icmpv4_get_stats(&stats);
     if (!probe_ping_reported && stats.last_reply_identifier ==
-                                  NET_STACK_PROBE_IDENTIFIER &&
+        NET_STACK_PROBE_IDENTIFIER &&
         stats.last_reply_sequence == NET_STACK_PROBE_SEQUENCE) {
         probe_ping_reported = 1;
         printk("QS:M5_PING_OK\n");
@@ -152,6 +152,7 @@ net_err_t net_stack_poll_once(netif_t *netif, u64 deadline)
 void net_stack_worker(void *arg)
 {
     netif_t *netif = (netif_t *)arg;
+
     if (netif == 0)
         netif = stack_netif;
     for (;;) {

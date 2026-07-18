@@ -57,6 +57,8 @@ net_err_t ipv4_in(netif_t *netif, pktbuf_t *buf)
         pktbuf_set_cont(buf, header_size) != NET_ERR_OK)
         return NET_ERR_SIZE;
     header = (ipv4_hdr_t *)pktbuf_data(buf);
+    if (header == 0)
+        return NET_ERR_SIZE;
 
     uint16_t packet_size = x_ntohs(header->total_len);
     if (packet_size < (uint16_t)header_size || packet_size > total_size)
@@ -88,18 +90,31 @@ net_err_t ipv4_in(netif_t *netif, pktbuf_t *buf)
 net_err_t ipv4_out(netif_t *netif, const ipaddr_t *dest,
                    uint8_t protocol, pktbuf_t *buf)
 {
-    if (netif == 0 || dest == 0 || buf == 0)
+    if (buf == 0)
         return NET_ERR_PARAM;
-    if (netif->state != NETIF_ACTIVE)
+    if (netif == 0 || dest == 0) {
+        pktbuf_free(buf);
+        return NET_ERR_PARAM;
+    }
+    if (netif->state != NETIF_ACTIVE) {
+        pktbuf_free(buf);
         return NET_ERR_STATE;
+    }
     int payload_size = pktbuf_total(buf);
-    if (payload_size <= 0 || payload_size > netif->mtu - IPV4_HEADER_MIN)
+    if (payload_size <= 0 || payload_size > netif->mtu - IPV4_HEADER_MIN) {
+        pktbuf_free(buf);
         return NET_ERR_SIZE;
-    if (pktbuf_add_header(buf, IPV4_HEADER_MIN, 1) != NET_ERR_OK)
-        return NET_ERR_MEM;
+    }
+    net_err_t err = pktbuf_add_header(buf, IPV4_HEADER_MIN, 1);
+    if (err < 0) {
+        pktbuf_free(buf);
+        return err;
+    }
     ipv4_hdr_t *header = (ipv4_hdr_t *)pktbuf_data(buf);
-    if (header == 0)
+    if (header == 0) {
+        pktbuf_free(buf);
         return NET_ERR_SIZE;
+    }
     header->version_ihl = (uint8_t)((NET_VERSION_IPV4 << 4) | 5);
     header->dscp = 0;
     header->total_len = x_htons((uint16_t)(payload_size + IPV4_HEADER_MIN));
@@ -113,6 +128,6 @@ net_err_t ipv4_out(netif_t *netif, const ipaddr_t *dest,
     header->hdr_checksum =
         x_htons(checksum16(0, header, IPV4_HEADER_MIN, 0, 1));
 
-    net_err_t err = arp_resolve(netif, dest, buf);
+    err = arp_resolve(netif, dest, buf);
     return err;
 }

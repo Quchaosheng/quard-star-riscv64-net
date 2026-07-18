@@ -20,8 +20,7 @@ int ipaddr_is_equal(const ipaddr_t *left, const ipaddr_t *right);
 void ipaddr_to_buf(const ipaddr_t *src, uint8_t *ip_buf);
 void ipaddr_from_buf(ipaddr_t *dest, const uint8_t *ip_buf);
 int ipaddr_is_local_broadcast(const ipaddr_t *ip);
-int ipaddr_is_direct_broadcast(const ipaddr_t *ip,
-                               const ipaddr_t *netmask);
+int ipaddr_is_direct_broadcast(const ipaddr_t *ip, const ipaddr_t *netmask);
 int ipaddr_is_any(const ipaddr_t *ip);
 ipaddr_t ipaddr_get_net(const ipaddr_t *ip, const ipaddr_t *netmask);
 int ipaddr_is_match(const ipaddr_t *dest, const ipaddr_t *src,

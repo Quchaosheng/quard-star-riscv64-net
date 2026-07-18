@@ -72,7 +72,7 @@ net_err_t netif_virtio_poll(netif_t *netif, u64 deadline)
     u32 length = 0;
     if (virtio_net_receive(frame, sizeof(frame), &length, deadline) < 0)
         return NET_ERR_TMO;
-    if (length == 0 || length > ETHERNET_MAX_FRAME)
+    if (length < ETHERNET_MIN_FRAME || length > ETHERNET_MAX_FRAME)
         return NET_ERR_SIZE;
 
     pktbuf_t *buf = pktbuf_alloc((int)length);
