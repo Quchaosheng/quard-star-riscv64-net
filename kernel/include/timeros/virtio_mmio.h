@@ -33,12 +33,15 @@ struct virtio_mmio {
 };
 
 int virtio_mmio_init(struct virtio_mmio *dev, u64 base, u32 device_id,
-                     u32 rejected_features);
+                     u32 rejected_features, u32 required_features,
+                     u32 *negotiated_features);
 int virtio_mmio_setup_queue(struct virtio_mmio *dev, u16 queue,
                             struct virtqueue *vq, void *pages);
 void virtio_mmio_driver_ok(struct virtio_mmio *dev);
 void virtio_mmio_notify(struct virtio_mmio *dev, u16 queue);
 u32 virtio_mmio_ack_interrupt(struct virtio_mmio *dev);
 u64 virtio_mmio_config64(struct virtio_mmio *dev, u32 offset);
+u8 virtio_mmio_config8(struct virtio_mmio *dev, u32 offset);
+void virtio_mmio_reset(struct virtio_mmio *dev);
 
 #endif

@@ -144,7 +144,7 @@ void virtio_disk_init(void)
                    (1U << VIRTIO_RING_F_EVENT_IDX) |
                    (1U << VIRTIO_RING_F_INDIRECT_DESC);
 
-    if (virtio_mmio_init(&disk.mmio, VIRTIO0, 2, rejected) < 0) {
+    if (virtio_mmio_init(&disk.mmio, VIRTIO0, 2, rejected, 0, 0) < 0) {
         printk("QS:TEST_FAIL:m3-block:init\n");
         panic("could not find virtio disk");
     }
