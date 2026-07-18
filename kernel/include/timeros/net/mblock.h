@@ -2,12 +2,14 @@
 #define TOS_NET_MBLOCK_H__
 
 #include <timeros/net/net_err.h>
+#include <timeros/net/net_sys.h>
 #include <timeros/net/nlist.h>
 #include <timeros/net/nlocker.h>
 
 typedef struct {
     void *start;
     nlist_t free_list;
+    sys_sem_t alloc_sem;
     nlocker_t locker;
 } mblock_t;
 
