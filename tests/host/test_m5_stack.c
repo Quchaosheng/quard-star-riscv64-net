@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include <timeros/net/loop.h>
+#include <timeros/net/net_cfg.h>
 #include <timeros/net/net_stack.h>
 #include <timeros/net/timer.h>
 #include <timeros/virtio_net.h>
@@ -39,15 +41,18 @@ u64 net_stack_test_now(void)
 
 int main(void)
 {
-    assert(net_timer_init() == NET_ERR_OK);
     assert(net_stack_init() == NET_ERR_OK);
     netif_t *netif = net_stack_default();
+    netif_t *loop = loop_get_netif();
     assert(netif != 0);
+    assert(loop != 0);
+    assert(loop->state == NETIF_ACTIVE);
     assert(netif->state == NETIF_ACTIVE);
     assert(netif_get_default() == netif);
     assert(netif->hwaddr.len == 6);
     assert(netif->mtu == 1500);
     assert(netif->ipaddr.q_addr == 0xc0a86402U);
+    assert(net_timer_first_tmo() == ARP_TIMER_TMO * 1000);
     assert(net_stack_poll_once(netif, 1234) == NET_ERR_TMO);
     assert(receive_calls == 1);
     return 0;
