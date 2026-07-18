@@ -52,6 +52,22 @@ require_text kernel/src/virtio_mmio.c \
   'VIRTIO_MMIO_QUEUE_PFN' 'legacy queue registration needs PFN'
 require_absent kernel/src/virtio_mmio.c \
   'VIRTIO_MMIO_QUEUE_DESC_LOW' 'M3 must not mix modern queue registers'
+require_text kernel/include/timeros/plic.h \
+  'void plic_init_hart(void);' 'each scheduling hart must initialize its PLIC context'
+require_text kernel/src/timer.c \
+  'SIE_SEIE' 'scheduling harts must enable supervisor external interrupts'
+require_text kernel/src/trap.c \
+  'u32 irq = plic_claim();' 'external interrupts must claim their PLIC source'
+require_text kernel/src/trap.c \
+  'if (irq == 0)' 'a concurrent empty PLIC claim must be harmless'
+require_text kernel/src/trap.c \
+  'plic_complete(irq);' 'external interrupts must complete their PLIC source'
+require_text kernel/src/trap.c \
+  'int handled = 1;' 'claimed PLIC interrupts need a completion result path'
+require_text kernel/src/trap.c \
+  'return handled;' 'unknown PLIC interrupts must complete before failing'
+require_text kernel/src/address.c \
+  'PLIC_SIZE' 'the kernel page table must map PLIC MMIO'
 require_text kernel/src/virtio_disk.c \
   'task_sleep(' 'block requests must sleep for completion'
 require_absent kernel/src/virtio_disk.c \
@@ -69,6 +85,17 @@ require_order kernel/src/task.c \
   'the init task must drop task_lock before block I/O'
 require_text kernel/src/task.c \
   'if (current_proc()->pid == 0)' 'only init may run the pre-user block smoke'
+require_text kernel/src/bio.c \
+  'struct sleeplock lock;' 'buffer-cache metadata needs a sleeping lock'
+require_text kernel/include/timeros/bio.h \
+  'struct sleeplock data_lock;' 'each buffer needs a sleeping data lock'
+require_text kernel/src/bio.c \
+  'sleeplock_init(&bcache.lock);' 'buffer-cache metadata lock must be initialized'
+require_text kernel/src/bio.c \
+  'sleeplock_init(&b->data_lock);' 'each buffer data lock must be initialized'
+require_order kernel/src/main.c \
+  'binit();' 'virtio_disk_init();' \
+  'the buffer cache must initialize before the block device'
 require_text scripts/prepare-fatfs.sh \
   'out/deps/fatfs' 'FatFs must extract only into ignored build output'
 require_text kernel/src/fatfs_test.c \
