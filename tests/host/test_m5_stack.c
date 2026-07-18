@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include <timeros/net/net_stack.h>
+#include <timeros/net/timer.h>
 #include <timeros/virtio_net.h>
 
 static int receive_calls;
@@ -38,6 +39,7 @@ u64 net_stack_test_now(void)
 
 int main(void)
 {
+    assert(net_timer_init() == NET_ERR_OK);
     assert(net_stack_init() == NET_ERR_OK);
     netif_t *netif = net_stack_default();
     assert(netif != 0);
