@@ -5,4 +5,10 @@
 #define PKTBUF_BLK_CNT 256
 #define PKTBUF_BUF_CNT 128
 
+#define NETIF_HWADDR_SIZE 10
+#define NETIF_NAME_SIZE 16
+#define NETIF_DEV_CNT 4
+#define NETIF_INQ_SIZE 16
+#define NETIF_OUTQ_SIZE 16
+
 #endif
