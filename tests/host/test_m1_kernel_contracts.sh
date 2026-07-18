@@ -38,14 +38,14 @@ require_text kernel/src/timer.c \
 require_text kernel/src/task.c \
   'kfree(floor_phys(phys_addr_from_size_t(p->trap_cx_ppn)));' \
   'final process cleanup must free the trap frame'
-require_text kernel/src/virtio_disk.c \
-  '*VTMO_REG(VIRTIO_MMIO_QUEUE_ALIGN) = PAGE_SIZE;' \
+require_text kernel/src/virtio_mmio.c \
+  '*mmio_reg(dev, VIRTIO_MMIO_QUEUE_ALIGN) = VIRTQ_PAGE_SIZE;' \
   'VirtIO MMIO v1 must configure queue alignment'
-require_text kernel/src/virtio_disk.c \
-  '*VTMO_REG(VIRTIO_MMIO_QUEUE_PFN) = (u32)((u64)disk.pages >> PAGE_SIZE_BITS);' \
+require_text kernel/src/virtio_mmio.c \
+  '*mmio_reg(dev, VIRTIO_MMIO_QUEUE_PFN) =' \
   'VirtIO MMIO v1 must register the queue PFN'
 require_text kernel/src/virtio_disk.c \
-  'void virtio_disk_smoke_test()' \
+  'void virtio_disk_smoke_test(void)' \
   'the kernel must perform a real block-I/O smoke test'
 
 if [ "$status" -ne 0 ]; then

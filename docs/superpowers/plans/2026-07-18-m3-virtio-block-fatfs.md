@@ -107,12 +107,13 @@ static void test_allocate_rollback_and_reclaim(void)
     static unsigned char pages[2 * 4096] __attribute__((aligned(4096)));
     struct virtqueue q;
     int chain[VIRTQ_NUM];
+    int exhausted[VIRTQ_NUM];
 
     assert(virtq_init(&q, pages, VIRTQ_NUM) == 0);
     assert(virtq_free_count(&q) == VIRTQ_NUM);
     assert(virtq_alloc_chain(&q, 3, chain) == 0);
     assert(virtq_free_count(&q) == VIRTQ_NUM - 3);
-    assert(virtq_alloc_chain(&q, VIRTQ_NUM, chain) == -1);
+    assert(virtq_alloc_chain(&q, VIRTQ_NUM, exhausted) == -1);
     assert(virtq_free_count(&q) == VIRTQ_NUM - 3);
     assert(virtq_free_chain(&q, chain[0]) == 3);
     assert(virtq_free_count(&q) == VIRTQ_NUM);
