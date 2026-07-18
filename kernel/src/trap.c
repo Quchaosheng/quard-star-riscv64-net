@@ -39,7 +39,7 @@ static int handle_interrupt(reg_t scause)
 		int handled = 1;
 		if (irq == PLIC_VIRTIO0_IRQ)
 			virtio_disk_intr();
-#ifdef QS_M4_TEST
+#if defined(QS_M4_TEST) || defined(QS_M5_TEST)
 		else if (irq == PLIC_VIRTIO1_IRQ)
 			virtio_net_intr();
 #endif

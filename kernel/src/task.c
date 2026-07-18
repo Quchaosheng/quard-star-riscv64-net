@@ -25,8 +25,16 @@ static void task_reset_wait(struct TaskControlBlock *p)
 
 static void task_first_run(void)
 {
+    TaskControlBlock *task = current_proc();
+    if (task->kernel_entry != 0) {
+        void (*entry)(void *) = task->kernel_entry;
+        void *arg = task->kernel_arg;
+        spin_unlock(&task_lock);
+        entry(arg);
+        panic("kernel task returned");
+    }
     spin_unlock(&task_lock);
-    if (current_proc()->pid == 0) {
+    if (task->pid == 0) {
         virtio_disk_smoke_test();
 #ifdef QS_M3_TEST
         int result = fatfs_test_run();
@@ -86,6 +94,8 @@ void procinit(void)
     for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
         p->task_state = UnInit;
         p->last_hart = -1;
+        p->kernel_entry = 0;
+        p->kernel_arg = 0;
         task_reset_wait(p);
     }
 }
@@ -191,6 +201,32 @@ void app_init(size_t app_id)
     p->task_state = Ready;
     task_count++;
     spin_unlock(&task_lock);
+}
+
+int task_create_kernel(void (*entry)(void *), void *arg)
+{
+    if (entry == 0)
+        return -1;
+    TaskControlBlock *task = 0;
+    spin_lock(&task_lock);
+    for (TaskControlBlock *candidate = tasks;
+         candidate < &tasks[MAX_TASKS]; candidate++) {
+        if (candidate->task_state == UnInit) {
+            task = candidate;
+            task->task_state = Creating;
+            task->pid = allocpid_locked();
+            task->parent = 0;
+            task->kernel_entry = entry;
+            task->kernel_arg = arg;
+            task_reset_wait(task);
+            task->task_context = tcx_init((reg_t)task->kstack);
+            task->task_state = Ready;
+            task_count++;
+            break;
+        }
+    }
+    spin_unlock(&task_lock);
+    return task != 0 ? 0 : -1;
 }
 
 struct TaskControlBlock *current_proc(void)
@@ -471,6 +507,8 @@ static void freeproc_locked(struct TaskControlBlock *p)
     p->parent = 0;
     p->ustack = 0;
     p->entry = 0;
+    p->kernel_entry = 0;
+    p->kernel_arg = 0;
     p->exit_code = 0;
     p->last_hart = -1;
     p->wait_channel = 0;
