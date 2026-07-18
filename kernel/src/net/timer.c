@@ -2,6 +2,17 @@
 
 static nlist_t timer_list;
 
+static int timer_is_active(net_timer_t *timer)
+{
+    nlist_node_t *node;
+
+    nlist_for_each(node, &timer_list) {
+        if (nlist_entry(node, net_timer_t, node) == timer)
+            return 1;
+    }
+    return 0;
+}
+
 static void timer_name_copy(char *dest, const char *src)
 {
     int i = 0;
@@ -52,6 +63,8 @@ net_err_t net_timer_add(net_timer_t *timer, const char *name,
 {
     if (timer == 0 || name == 0 || proc == 0 || ms <= 0)
         return NET_ERR_PARAM;
+    if (timer_is_active(timer))
+        return NET_ERR_EXIST;
 
     timer_name_copy(timer->name, name);
     timer->flags = flags;
@@ -118,7 +131,8 @@ net_err_t net_timer_check_tmo(int diff_ms)
         net_timer_t *timer = nlist_entry(node, net_timer_t, node);
 
         timer->proc(timer, timer->arg);
-        if ((timer->flags & NET_TIMER_RELOAD) != 0) {
+        if ((timer->flags & NET_TIMER_RELOAD) != 0 &&
+            !timer_is_active(timer)) {
             timer->curr = timer->reload;
             insert_timer(timer);
         }
