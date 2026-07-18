@@ -6,6 +6,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -fno-sanitize-recover=undefined \
   -pthread -I"$root/kernel/include" -I"$root/kernel/include/timeros/net" \
   "$root/tests/host/test_m6_runtime.c" \
   "$root/kernel/src/net/net_sys.c" \
