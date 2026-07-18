@@ -65,6 +65,18 @@ static inline reg_t r_stvec()
   return x;
 }
 
+static inline reg_t r_tp()
+{
+  reg_t x;
+  asm volatile("mv %0, tp" : "=r" (x));
+  return x;
+}
+
+static inline void w_tp(reg_t x)
+{
+  asm volatile("mv tp, %0" : : "r" (x));
+}
+
 // Supervisor Interrupt Enable
 #define SIE_SEIE (1L << 9) // external
 #define SIE_STIE (1L << 5) // timer

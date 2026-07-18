@@ -10,6 +10,15 @@ size_t strlen(const char *str)
     return ptr - str;
 }
 
+size_t strnlen(const char *str, size_t max)
+{
+    size_t len = 0;
+    while (len < max && str[len] != EOS) {
+        len++;
+    }
+    return len;
+}
+
 // 从存储区 src 复制 n 个字节到存储区 dest。
 void* memcpy(void *dest, const void *src, size_t count)
 {
@@ -19,6 +28,58 @@ void* memcpy(void *dest, const void *src, size_t count)
         *ptr++ = *((char *)(src++));
     }
     return dest;
+}
+
+void *memmove(void *dest, const void *src, size_t count)
+{
+    unsigned char *d = dest;
+    const unsigned char *s = src;
+
+    if (d < s) {
+        while (count--)
+            *d++ = *s++;
+    } else if (d > s) {
+        d += count;
+        s += count;
+        while (count--)
+            *--d = *--s;
+    }
+    return dest;
+}
+
+int memcmp(const void *lhs, const void *rhs, size_t count)
+{
+    const unsigned char *l = lhs;
+    const unsigned char *r = rhs;
+
+    while (count--) {
+        if (*l != *r)
+            return *l < *r ? -1 : 1;
+        l++;
+        r++;
+    }
+    return 0;
+}
+
+void *memchr(const void *ptr, int ch, size_t count)
+{
+    const unsigned char *p = ptr;
+    while (count--) {
+        if (*p == (unsigned char)ch)
+            return (void *)p;
+        p++;
+    }
+    return 0;
+}
+
+char *strrchr(const char *str, int ch)
+{
+    const char *last = 0;
+    do {
+        if (*str == (char)ch)
+            last = str;
+    } while (*str++ != EOS);
+    return (char *)last;
 }
 
 

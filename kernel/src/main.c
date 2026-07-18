@@ -1,6 +1,86 @@
 #include <timeros/os.h>
 
-void os_main()
+void os_main(const void *fdt);
+
+#define SMP_ALLOC_ITERATIONS 10000
+#define SMP_ALLOC_TIMEOUT_TICKS 100000000ULL
+
+static u32 smp_alloc_start;
+static u32 smp_alloc_done;
+static u32 smp_alloc_failed;
+
+static void smp_allocator_worker()
+{
+   u64 hartid = cpu_this()->hartid;
+   for (u64 i = 0; i < SMP_ALLOC_ITERATIONS; i++) {
+      PhysPageNum ppn = kalloc();
+      if (ppn.value == 0) {
+         __atomic_store_n(&smp_alloc_failed, 1, __ATOMIC_RELEASE);
+         break;
+      }
+
+      u64 *page = (u64 *)(uintptr_t)phys_addr_from_phys_page_num(ppn).value;
+      u64 marker = 0x5153000000000000ULL ^ (hartid << 32) ^ i;
+      page[0] = marker;
+      page[PAGE_SIZE / sizeof(u64) - 1] = ~marker;
+      if (page[0] != marker || page[PAGE_SIZE / sizeof(u64) - 1] != ~marker)
+         __atomic_store_n(&smp_alloc_failed, 1, __ATOMIC_RELEASE);
+      kfree(ppn);
+   }
+   __atomic_fetch_add(&smp_alloc_done, 1, __ATOMIC_RELEASE);
+}
+
+static void smp_allocator_test()
+{
+   if (cpu_count() < 2)
+      return;
+
+   u64 baseline = free_page_count();
+   __atomic_store_n(&smp_alloc_failed, 0, __ATOMIC_RELAXED);
+   __atomic_store_n(&smp_alloc_done, 0, __ATOMIC_RELAXED);
+   __atomic_store_n(&smp_alloc_start, 1, __ATOMIC_RELEASE);
+   smp_allocator_worker();
+
+   u64 deadline = r_mtime() + SMP_ALLOC_TIMEOUT_TICKS;
+   while (__atomic_load_n(&smp_alloc_done, __ATOMIC_ACQUIRE) < (u32)cpu_count()) {
+      if (r_mtime() >= deadline) {
+         printk("QS:TEST_FAIL:m2a-alloc:timeout\n");
+         panic("SMP allocator timeout");
+      }
+   }
+
+   if (__atomic_load_n(&smp_alloc_failed, __ATOMIC_ACQUIRE) ||
+       free_page_count() != baseline) {
+      printk("QS:TEST_FAIL:m2a-alloc:corruption\n");
+      panic("SMP allocator test");
+   }
+   printk("QS:SMP_ALLOC_OK\n");
+}
+
+static void secondary_main()
+{
+   kvminithart();
+   set_kernel_trap_entry();
+   cpu_publish_online();
+   while (!__atomic_load_n(&smp_alloc_start, __ATOMIC_ACQUIRE))
+      asm volatile("nop");
+   smp_allocator_worker();
+   for (;;) {
+      asm volatile("wfi");
+   }
+}
+
+void kernel_entry(u64 hartid, const void *fdt)
+{
+   cpu_bind(hartid);
+   if (hartid != 0)
+      secondary_main();
+
+   cpu_discover(fdt, hartid);
+   os_main(fdt);
+}
+
+void os_main(const void *fdt)
 {
    printk("QS:BOOT_OK\n");
    printk("QS:KERNEL_READY\n");
@@ -22,12 +102,20 @@ void os_main()
    //trap初始化
    set_kernel_trap_entry();
 
+   cpu_publish_online();
+   printk("QS:HART_ONLINE:0\n");
+   cpu_start_secondaries(fdt);
+   smp_allocator_test();
+
    get_app_names();
 
    //初始化时钟
    timer_init();
 
-   printk("QS:TEST_PASS:m1-smoke\n");
+   if (cpu_count() > 1)
+      printk("QS:TEST_PASS:m2a-smoke\n");
+   else
+      printk("QS:TEST_PASS:m1-smoke\n");
 
    run_first_task();
 
