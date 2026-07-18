@@ -25,6 +25,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/arp.c" \
   "$root/kernel/src/net/ipv4.c" \
   "$root/kernel/src/net/icmpv4.c" \
+  "$root/kernel/src/net/loop.c" \
   "$root/kernel/src/net/net_stack.c" \
   -o "$tmp/test_m5_stack"
 ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
