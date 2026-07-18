@@ -4,12 +4,21 @@
 #include <timeros/net/net_cfg.h>
 #include <timeros/net/net_port.h>
 #include <timeros/net/protocol.h>
+#include <timeros/net/timer.h>
 #include <timeros/net/tools.h>
 
+static net_timer_t cache_timer;
 static arp_entry_t cache_entries[ARP_CACHE_SIZE];
 static mblock_t cache_blocks;
 static nlist_t cache_list;
 static const uint8_t empty_hwaddr[ETH_HWA_SIZE];
+
+static int arp_scan_count(int seconds)
+{
+    int count = seconds / ARP_TIMER_TMO;
+
+    return count > 0 ? count : 1;
+}
 
 static void arp_free_waiting(arp_entry_t *entry)
 {
@@ -81,6 +90,45 @@ static void arp_set_entry(arp_entry_t *entry, netif_t *netif,
     ipaddr_from_buf(&entry->paddr, ipbuf);
     plat_memcpy(entry->haddr, mac, ETH_HWA_SIZE);
     entry->state = state;
+    entry->tmo = arp_scan_count(state == NET_ARP_RESOLVED
+                                    ? ARP_ENTRY_STABLE_TMO
+                                    : ARP_ENTRY_PENDING_TMO);
+    entry->retry = ARP_ENTRY_RETRY_CNT;
+}
+
+static void arp_cache_tmo(net_timer_t *timer, void *arg)
+{
+    nlist_node_t *node = nlist_first(&cache_list);
+
+    (void)timer;
+    (void)arg;
+    while (node != 0) {
+        nlist_node_t *next = nlist_node_next(node);
+        arp_entry_t *entry = arp_entry_from_node(node);
+
+        if (--entry->tmo > 0) {
+            node = next;
+            continue;
+        }
+        if (entry->state == NET_ARP_RESOLVED) {
+            ipaddr_t ipaddr = entry->paddr;
+
+            entry->state = NET_ARP_WAITING;
+            entry->tmo = arp_scan_count(ARP_ENTRY_PENDING_TMO);
+            entry->retry = ARP_ENTRY_RETRY_CNT;
+            (void)arp_make_request(entry->netif, &ipaddr);
+        } else if (entry->state == NET_ARP_WAITING) {
+            if (--entry->retry <= 0) {
+                arp_free_entry(entry);
+            } else {
+                ipaddr_t ipaddr = entry->paddr;
+
+                entry->tmo = arp_scan_count(ARP_ENTRY_PENDING_TMO);
+                (void)arp_make_request(entry->netif, &ipaddr);
+            }
+        }
+        node = next;
+    }
 }
 
 static net_err_t arp_send_waiting(arp_entry_t *entry)
@@ -140,7 +188,11 @@ net_err_t arp_init(void)
                                 NLOCKER_NONE);
     if (err < 0)
         return err;
-    return ether_register_handler(NET_PROTOCOL_ARP, arp_in);
+    err = ether_register_handler(NET_PROTOCOL_ARP, arp_in);
+    if (err < 0)
+        return err;
+    return net_timer_add(&cache_timer, "arp timer", arp_cache_tmo, 0,
+                         ARP_TIMER_TMO * 1000, NET_TIMER_RELOAD);
 }
 
 net_err_t arp_make_request(netif_t *netif, const ipaddr_t *protocol_addr)
@@ -278,7 +330,6 @@ net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr,
     nlist_insert_last(&entry->buf_list, &buf->node);
     net_err_t err = arp_make_request(netif, ipaddr);
     if (err < 0) {
-        nlist_remove(&entry->buf_list, &buf->node);
         arp_free_entry(entry);
         return err;
     }

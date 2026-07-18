@@ -8,6 +8,7 @@
 #include <timeros/net/netif.h>
 #include <timeros/net/pktbuf.h>
 #include <timeros/net/protocol.h>
+#include <timeros/net/timer.h>
 #include <timeros/net/tools.h>
 
 static uint8_t last_frame[ETH_FRAME_MAX];
@@ -157,6 +158,7 @@ int main(void)
     };
 
     assert(pktbuf_init() == NET_ERR_OK);
+    assert(net_timer_init() == NET_ERR_OK);
     assert(netif_init() == NET_ERR_OK);
     assert(ether_init() == NET_ERR_OK);
     assert(arp_init() == NET_ERR_OK);
