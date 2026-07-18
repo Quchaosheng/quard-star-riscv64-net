@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <assert.h>
+#include <limits.h>
 #include <pthread.h>
 #include <time.h>
 
@@ -91,6 +92,15 @@ static void test_try_wait_returns_immediately_when_empty(void)
     sys_sem_free(sem);
 }
 
+static void test_notify_saturates_count(void)
+{
+    sys_sem_t sem = sys_sem_create(INT_MAX);
+    assert(sem != SYS_SEM_INVALID);
+    sys_sem_notify(sem);
+    assert(sys_sem_wait(sem, -1) == NET_ERR_OK);
+    sys_sem_free(sem);
+}
+
 static void test_invalid_arguments(void)
 {
     assert(sys_sem_create(-1) == SYS_SEM_INVALID);
@@ -110,6 +120,7 @@ int main(void)
     test_wait_and_notify();
     test_try_wait_consumes_available_token();
     test_try_wait_returns_immediately_when_empty();
+    test_notify_saturates_count();
     test_invalid_arguments();
     return 0;
 }
