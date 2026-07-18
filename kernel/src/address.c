@@ -132,39 +132,59 @@ PageTableEntry* get_pte_array(PhysPageNum ppn)
 
 
 /* 内存分配器 */
+struct run {
+    struct run *next;
+};
+
+#define ALLOCATOR_PAGE_COUNT ((PHYSTOP - KERNBASE) / PAGE_SIZE)
+
 typedef struct
 {
     uint64_t start;
-    uint64_t current;   //空闲内存的起始物理页号
     uint64_t  end;      //空闲内存的结束物理页号
-    Stack recycled;     //
+    struct spinlock lock;
+    struct run *freelist;
+    u64 free_pages;
+    u8 free_map[ALLOCATOR_PAGE_COUNT];
 }StackFrameAllocator;
 
 void StackFrameAllocator_new(StackFrameAllocator* allocator) {
     allocator->start = 0;
-    allocator->current = 0;
     allocator->end = 0;
-    initStack(&allocator->recycled);
+    allocator->freelist = 0;
+    allocator->free_pages = 0;
+    memset(allocator->free_map, 0, sizeof(allocator->free_map));
+    spin_init(&allocator->lock);
 }
 
 void StackFrameAllocator_init(StackFrameAllocator *allocator, PhysPageNum l, PhysPageNum r) {
     allocator->start = l.value;
-    allocator->current = l.value;
     allocator->end = r.value;
+    for (u64 value = r.value; value > l.value;) {
+        value--;
+        PhysPageNum ppn = { .value = value };
+        struct run *page = (struct run *)(uintptr_t)
+            phys_addr_from_phys_page_num(ppn).value;
+        page->next = allocator->freelist;
+        allocator->freelist = page;
+        allocator->free_pages++;
+        allocator->free_map[value - (KERNBASE >> PAGE_SIZE_BITS)] = 1;
+    }
 }
 
 PhysPageNum StackFrameAllocator_alloc(StackFrameAllocator *allocator) {
-    PhysPageNum ppn;
-    if (allocator->recycled.top >= 0) {
-        ppn.value = pop(&(allocator->recycled));
-    } else {
-        if (allocator->current == allocator->end) {
-            ppn.value = 0;
-            return ppn;
-        } else {
-            ppn.value = allocator->current++;
-        }
+    PhysPageNum ppn = { .value = 0 };
+    spin_lock(&allocator->lock);
+    struct run *page = allocator->freelist;
+    if (page != 0) {
+        allocator->freelist = page->next;
+        allocator->free_pages--;
+        ppn = floor_phys(phys_addr_from_size_t((u64)(uintptr_t)page));
+        allocator->free_map[ppn.value - (KERNBASE >> PAGE_SIZE_BITS)] = 0;
     }
+    spin_unlock(&allocator->lock);
+    if (ppn.value == 0)
+        return ppn;
     /* clear allocated page memory. */
     PhysAddr addr = phys_addr_from_phys_page_num(ppn);
     memset((void *)(uintptr_t)addr.value, 0, PAGE_SIZE);
@@ -174,21 +194,24 @@ PhysPageNum StackFrameAllocator_alloc(StackFrameAllocator *allocator) {
 void StackFrameAllocator_dealloc(StackFrameAllocator *allocator, PhysPageNum ppn) {
     uint64_t ppnValue = ppn.value;
     // 检查回收的页面之前一定被分配出去过
-    if (ppnValue < allocator->start || ppnValue >= allocator->current) {
+    if (ppnValue < allocator->start || ppnValue >= allocator->end) {
         printk("Frame ppn=%lx has not been allocated!\n", ppnValue);
         return;
     }
-    // 检查未在回收列表中
-    if(allocator->recycled.top>=0)
-    {
-        for (size_t i = 0; i <= allocator->recycled.top; i++)
-        {
-            if(ppnValue ==allocator->recycled.data[i] )
-            return;
-        }
+    struct run *page = (struct run *)(uintptr_t)
+        phys_addr_from_phys_page_num(ppn).value;
+    spin_lock(&allocator->lock);
+    u64 index = ppnValue - (KERNBASE >> PAGE_SIZE_BITS);
+    if (allocator->free_map[index]) {
+        spin_unlock(&allocator->lock);
+        return;
     }
     // 回收物理内存页号
-    push(&(allocator->recycled), ppnValue);
+    page->next = allocator->freelist;
+    allocator->freelist = page;
+    allocator->free_pages++;
+    allocator->free_map[index] = 1;
+    spin_unlock(&allocator->lock);
 }
 
 
@@ -235,6 +258,14 @@ PhysPageNum kalloc(void)
 void kfree(PhysPageNum ppn)
 {
     StackFrameAllocator_dealloc(&FrameAllocatorImpl,ppn);
+}
+
+u64 free_page_count(void)
+{
+    spin_lock(&FrameAllocatorImpl.lock);
+    u64 count = FrameAllocatorImpl.free_pages;
+    spin_unlock(&FrameAllocatorImpl.lock);
+    return count;
 }
 
 PageTableEntry* find_pte_create(PageTable* pt,VirtPageNum vpn)

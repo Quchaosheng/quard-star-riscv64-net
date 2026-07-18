@@ -31,12 +31,20 @@ struct sbiret {
 	long value;
 };
 
+enum sbi_ext_hsm_fid {
+	SBI_EXT_HSM_HART_START = 0,
+	SBI_EXT_HSM_HART_STOP = 1,
+	SBI_EXT_HSM_HART_GET_STATUS = 2,
+};
+
 struct sbiret sbi_ecall(int ext, int fid, unsigned long arg0,
 			unsigned long arg1, unsigned long arg2,
 			unsigned long arg3, unsigned long arg4,
 			unsigned long arg5);
 void sbi_console_putchar(int ch);
 int sbi_console_getchar(void);
+struct sbiret sbi_hart_start(u64 hartid, u64 start_addr, u64 opaque);
+struct sbiret sbi_hart_get_status(u64 hartid);
 
 
 

@@ -52,6 +52,18 @@ int sbi_console_getchar(void)
 	return ret.error;
 }
 
+struct sbiret sbi_hart_start(u64 hartid, u64 start_addr, u64 opaque)
+{
+	return sbi_ecall(SBI_EXT_HSM, SBI_EXT_HSM_HART_START,
+			 hartid, start_addr, opaque, 0, 0, 0);
+}
+
+struct sbiret sbi_hart_get_status(u64 hartid)
+{
+	return sbi_ecall(SBI_EXT_HSM, SBI_EXT_HSM_HART_GET_STATUS,
+			 hartid, 0, 0, 0, 0, 0);
+}
+
 /**
  * sbi_set_timer() - Program the timer for next timer event.
  * @stime_value: The value after which next timer event should fire.

@@ -92,6 +92,7 @@ void frame_alloctor_init();
 
 PhysPageNum kalloc(void);
 void kfree(PhysPageNum ppn);
+u64 free_page_count(void);
 void PageTable_map(PageTable* pt,VirtAddr va, PhysAddr pa, u64 size ,uint8_t pteflgs);
 PageTableEntry* find_pte(PageTable* pt, VirtPageNum vpn);
 
