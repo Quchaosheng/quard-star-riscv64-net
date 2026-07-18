@@ -32,6 +32,7 @@ test-host:
 	./tests/host/test_m6_runtime.sh
 	./tests/host/test_m6_timer.sh
 	./tests/host/test_m6_arp_timer.sh
+	./tests/host/test_m6_loop.sh
 	./tests/host/test_m5_netif.sh
 	./tests/host/test_m5_virtio_netif.sh
 	./tests/host/test_m5_ether.sh

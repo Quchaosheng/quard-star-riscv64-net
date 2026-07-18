@@ -18,7 +18,9 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/ipaddr.c" \
   "$root/kernel/src/net/netif.c" \
   "$root/kernel/src/net/tools.c" \
+  "$root/kernel/src/net/timer.c" \
   "$root/kernel/src/net/ether.c" \
+  "$root/kernel/src/net/arp.c" \
   -o "$tmp/test_m5_ether"
 "$tmp/test_m5_ether"
 

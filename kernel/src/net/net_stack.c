@@ -127,6 +127,29 @@ netif_t *net_stack_default(void)
     return stack_netif;
 }
 
+net_err_t net_stack_process_input(netif_t *netif)
+{
+    if (netif == 0)
+        return NET_ERR_PARAM;
+    if (netif->state != NETIF_ACTIVE)
+        return NET_ERR_STATE;
+    pktbuf_t *buf = netif_get_in(netif, -1);
+    if (buf == 0)
+        return NET_ERR_NONE;
+
+    net_err_t err;
+    if (netif->type == NETIF_TYPE_LOOP)
+        err = ipv4_in(netif, buf);
+    else if (netif->type == NETIF_TYPE_ETHER && netif->link_layer != 0 &&
+             netif->link_layer->in != 0)
+        err = netif->link_layer->in(netif, buf);
+    else
+        err = NET_ERR_NOT_SUPPORT;
+    if (err < 0)
+        pktbuf_free(buf);
+    return err;
+}
+
 net_err_t net_stack_poll_once(netif_t *netif, u64 deadline)
 {
     if (netif == 0)
@@ -136,17 +159,7 @@ net_err_t net_stack_poll_once(netif_t *netif, u64 deadline)
     net_err_t err = netif_virtio_poll(netif, deadline);
     if (err < 0)
         return err;
-    pktbuf_t *buf = netif_get_in(netif, -1);
-    if (buf == 0)
-        return NET_ERR_SYS;
-    if (netif->link_layer == 0 || netif->link_layer->in == 0) {
-        pktbuf_free(buf);
-        return NET_ERR_NOT_SUPPORT;
-    }
-    err = netif->link_layer->in(netif, buf);
-    if (err < 0)
-        pktbuf_free(buf);
-    return err;
+    return net_stack_process_input(netif);
 }
 
 void net_stack_worker(void *arg)

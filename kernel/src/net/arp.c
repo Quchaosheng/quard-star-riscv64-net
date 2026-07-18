@@ -255,7 +255,11 @@ net_err_t arp_make_reply(netif_t *netif, pktbuf_t *buf)
     plat_memcpy(packet->target_paddr, target_ip, IPV4_ADDR_SIZE);
     plat_memcpy(packet->send_haddr, netif->hwaddr.addr, ETH_HWA_SIZE);
     ipaddr_to_buf(&netif->ipaddr, packet->send_paddr);
-    return ether_raw_out(netif, NET_PROTOCOL_ARP, target_mac, buf);
+    pktbuf_inc_ref(buf);
+    net_err_t err = ether_raw_out(netif, NET_PROTOCOL_ARP, target_mac, buf);
+    if (err >= 0)
+        pktbuf_free(buf);
+    return err;
 }
 
 net_err_t arp_in(netif_t *netif, pktbuf_t *buf)

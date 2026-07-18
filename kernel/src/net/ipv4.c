@@ -1,6 +1,5 @@
 #include <timeros/net/ipv4.h>
 
-#include <timeros/net/arp.h>
 #include <timeros/net/ether.h>
 #include <timeros/net/net_port.h>
 #include <timeros/net/protocol.h>
@@ -128,6 +127,5 @@ net_err_t ipv4_out(netif_t *netif, const ipaddr_t *dest,
     header->hdr_checksum =
         x_htons(checksum16(0, header, IPV4_HEADER_MIN, 0, 1));
 
-    err = arp_resolve(netif, dest, buf);
-    return err;
+    return netif_out(netif, (ipaddr_t *)dest, buf);
 }

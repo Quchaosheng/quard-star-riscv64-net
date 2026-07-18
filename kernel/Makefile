@@ -58,6 +58,7 @@ NET_SRCS_C = \
 	net/arp.c \
 	net/ipv4.c \
 	net/icmpv4.c \
+	net/loop.c \
 	net/net_stack.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include

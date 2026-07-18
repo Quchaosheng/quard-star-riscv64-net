@@ -1,5 +1,6 @@
 #include <timeros/net/ether.h>
 
+#include <timeros/net/arp.h>
 #include <timeros/net/net_port.h>
 #include <timeros/net/tools.h>
 
@@ -31,10 +32,7 @@ static net_err_t ether_link_in(netif_t *netif, pktbuf_t *buf)
 static net_err_t ether_link_out(netif_t *netif, ipaddr_t *dest,
                                 pktbuf_t *buf)
 {
-    (void)netif;
-    (void)dest;
-    (void)buf;
-    return NET_ERR_NOT_SUPPORT;
+    return arp_resolve(netif, dest, buf);
 }
 
 static const link_layer_t ether_link_layer = {
