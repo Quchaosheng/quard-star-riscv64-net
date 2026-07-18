@@ -1,6 +1,8 @@
 CROSS_COMPILE = riscv64-unknown-elf-
 CFLAGS = -nostdlib -fno-builtin -march=rv64imafd_zicsr_zifencei -mabi=lp64d -mcmodel=medany -g
 CPPFLAGS ?=
+FATFS ?= 0
+FATFS_DIR ?= ../out/deps/fatfs/source
 
 GDB = riscv64-unknown-elf-gdb
 CC = ${CROSS_COMPILE}gcc
@@ -39,12 +41,20 @@ SRCS_C = \
 	bio.c \
 
 INCLUDE := -I./include -I../third_party/dtc/libfdt
+ifeq ($(FATFS),1)
+SRCS_C += fatfs_port.c fatfs_test.c
+INCLUDE += -I$(FATFS_DIR)
+endif
+
 SRC := ./src
 LIB := ./lib
 LIBFDT := ../third_party/dtc/libfdt
 OBJS = $(SRCS_ASM:.S=.o)
 OBJS += $(SRCS_C:.c=.o)
 OBJS += fdt.o fdt_ro.o
+ifeq ($(FATFS),1)
+OBJS += fatfs_ff.o
+endif
 
 all: build_app os.elf
 
@@ -65,6 +75,9 @@ fdt.o: $(LIBFDT)/fdt.c
 
 fdt_ro.o: $(LIBFDT)/fdt_ro.c
 	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $<
+
+fatfs_ff.o: $(FATFS_DIR)/ff.c
+	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -include timeros/string.h -c -o $@ $<
 
 %.o: $(SRC)/%.S
 	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $<

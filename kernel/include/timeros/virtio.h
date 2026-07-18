@@ -45,5 +45,9 @@ void virtio_disk_smoke_test();
 // 磁盘读写
 void virtio_disk_rw(struct buf *, int );
 void virtio_disk_intr();
+int virtio_blk_transfer(void *data, u64 sector, u32 count, int write);
+u64 virtio_blk_sector_count(void);
+int virtio_blk_free_descriptors(void);
+int virtio_blk_pending_requests(void);
 
 #endif

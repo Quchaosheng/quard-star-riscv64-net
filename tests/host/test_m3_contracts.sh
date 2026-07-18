@@ -96,8 +96,47 @@ require_text kernel/src/bio.c \
 require_order kernel/src/main.c \
   'binit();' 'virtio_disk_init();' \
   'the buffer cache must initialize before the block device'
+require_text kernel/src/syscall.c \
+  'console_write(chunk, n);' 'user output must share the kernel console lock'
 require_text scripts/prepare-fatfs.sh \
   'out/deps/fatfs' 'FatFs must extract only into ignored build output'
+require_text kernel/Makefile \
+  'FATFS ?= 0' 'FatFs compilation must be disabled by default'
+require_text kernel/Makefile \
+  'fatfs_ff.o' 'the M3 kernel must compile the pinned FatFs source'
+require_text scripts/m1-build.sh \
+  'QS_KERNEL_FATFS' 'the shared build needs an explicit FatFs gate'
+require_text kernel/include/timeros/virtio.h \
+  'int virtio_blk_transfer(void *data, u64 sector, u32 count, int write);' \
+  'FatFs needs a sector-oriented block API'
+require_text kernel/src/virtio_disk.c \
+  'count > disk.capacity - sector' 'sector bounds must avoid overflow'
+require_text kernel/src/fatfs_port.c \
+  'DSTATUS disk_initialize' 'FatFs needs disk_initialize'
+require_text kernel/src/fatfs_port.c \
+  'DSTATUS disk_status' 'FatFs needs disk_status'
+require_text kernel/src/fatfs_port.c \
+  'DRESULT disk_read' 'FatFs needs disk_read'
+require_text kernel/src/fatfs_port.c \
+  'DRESULT disk_write' 'FatFs needs disk_write'
+require_text kernel/src/fatfs_port.c \
+  'DRESULT disk_ioctl' 'FatFs needs disk_ioctl'
+require_text kernel/src/fatfs_port.c \
+  'GET_SECTOR_COUNT' 'FatFs needs media capacity'
+require_text kernel/src/fatfs_port.c \
+  'sector_count > 0xffffffffULL' '32-bit FatFs must reject oversized media'
+require_text kernel/src/fatfs_port.c \
+  'GET_SECTOR_SIZE' 'FatFs needs a 512-byte sector contract'
+require_text kernel/src/fatfs_port.c \
+  'CTRL_SYNC' 'FatFs needs write synchronization'
+require_text kernel/src/fatfs_test.c \
+  'f_mkfs(' 'the guest test must format an empty disk'
+require_text kernel/src/fatfs_test.c \
+  'f_mount(' 'the guest test must mount the filesystem'
+require_text kernel/src/fatfs_test.c \
+  'f_write(' 'the guest test must write through FatFs'
+require_text kernel/src/fatfs_test.c \
+  'f_read(' 'the guest test must read through FatFs'
 require_text kernel/src/fatfs_test.c \
   'printk("QS:FATFS_OK\n");' 'FatFs needs a stable runtime marker'
 require_text scripts/m3-smoke.sh \

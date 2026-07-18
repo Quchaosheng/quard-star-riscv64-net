@@ -26,8 +26,18 @@ static void task_reset_wait(struct TaskControlBlock *p)
 static void task_first_run(void)
 {
     spin_unlock(&task_lock);
-    if (current_proc()->pid == 0)
+    if (current_proc()->pid == 0) {
         virtio_disk_smoke_test();
+#ifdef QS_M3_TEST
+        int result = fatfs_test_run();
+        if (result != 0) {
+            printk("QS:TEST_FAIL:m3-fatfs:%d\n", result);
+            *(volatile u32 *)(uintptr_t)QEMU_TEST_BASE = QEMU_TEST_FAIL;
+            for (;;)
+                asm volatile("wfi");
+        }
+#endif
+    }
     trap_return();
 }
 

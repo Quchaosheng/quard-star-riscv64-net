@@ -93,9 +93,7 @@ int __sys_write(size_t fd, const char* data, size_t len)
 		if (copy_from_user(chunk, data + copied, n) < 0) {
 			return -1;
 		}
-		for (size_t i = 0; i < n; i++) {
-			sbi_console_putchar(chunk[i]);
-		}
+		console_write(chunk, n);
 		copied += n;
 	}
 

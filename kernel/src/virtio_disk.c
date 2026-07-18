@@ -26,6 +26,7 @@ static struct disk {
     int pending;
     int failed;
     u32 irq_reported;
+    u64 capacity;
 } __attribute__((aligned(PAGE_SIZE))) disk;
 
 static void block_fail_locked(const char *code)
@@ -102,10 +103,12 @@ void virtio_disk_smoke_test(void)
         for (int i = 0; i < BSIZE; i++)
             b.data[i] = (char)(iteration ^ i ^ 0x5a);
 
-        if (block_transfer(b.data, b.blockno * (BSIZE / 512), BSIZE, 1) < 0)
+        if (virtio_blk_transfer(b.data, b.blockno * (BSIZE / 512),
+                                BSIZE / 512, 1) < 0)
             panic("virtio disk smoke write");
         memset(b.data, 0, BSIZE);
-        if (block_transfer(b.data, b.blockno * (BSIZE / 512), BSIZE, 0) < 0)
+        if (virtio_blk_transfer(b.data, b.blockno * (BSIZE / 512),
+                                BSIZE / 512, 0) < 0)
             panic("virtio disk smoke read");
 
         for (int i = 0; i < BSIZE; i++) {
@@ -155,6 +158,11 @@ void virtio_disk_init(void)
     disk.pending = 0;
     disk.failed = 0;
     disk.irq_reported = 0;
+    disk.capacity = virtio_mmio_config64(&disk.mmio, 0);
+    if (disk.capacity == 0) {
+        printk("QS:TEST_FAIL:m3-block:capacity\n");
+        panic("virtio disk capacity");
+    }
     for (int i = 0; i < VIRTQ_NUM; i++)
         disk.info[i].waiter = 0;
     virtio_mmio_driver_ok(&disk.mmio);
@@ -163,9 +171,39 @@ void virtio_disk_init(void)
 
 void virtio_disk_rw(struct buf *b, int write)
 {
-    if (block_transfer(b->data, b->blockno * (BSIZE / 512), BSIZE,
-                       write) < 0)
+    if (virtio_blk_transfer(b->data, b->blockno * (BSIZE / 512),
+                            BSIZE / 512, write) < 0)
         panic("virtio disk I/O");
+}
+
+int virtio_blk_transfer(void *data, u64 sector, u32 count, int write)
+{
+    if (data == 0 || count == 0 || count > (~0U / 512U))
+        return -1;
+    if (sector >= disk.capacity || count > disk.capacity - sector)
+        return -1;
+    return block_transfer(data, sector, count * 512U, write);
+}
+
+u64 virtio_blk_sector_count(void)
+{
+    return disk.capacity;
+}
+
+int virtio_blk_free_descriptors(void)
+{
+    spin_lock(&disk.lock);
+    int count = virtq_free_count(&disk.queue);
+    spin_unlock(&disk.lock);
+    return count;
+}
+
+int virtio_blk_pending_requests(void)
+{
+    spin_lock(&disk.lock);
+    int pending = disk.pending;
+    spin_unlock(&disk.lock);
+    return pending;
 }
 
 void virtio_disk_intr(void)
