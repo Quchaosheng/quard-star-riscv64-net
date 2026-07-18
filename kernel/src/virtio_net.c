@@ -82,6 +82,12 @@ static void net_repost_rx_locked(int slot)
     virtio_mmio_notify(&net.mmio, VIRTIO_NET_RX_QUEUE);
 }
 
+static void net_drop_rx_locked(int slot)
+{
+    net.stats.rx_dropped++;
+    net_repost_rx_locked(slot);
+}
+
 static int net_find_rx_slot_locked(u16 descriptor)
 {
     for (int i = 0; i < VIRTQ_NUM; i++) {
@@ -237,7 +243,8 @@ int virtio_net_send(const void *frame, u32 length)
 
     spin_lock(&net.lock);
     u64 generation = net.stats.resets;
-    while (net.active && (slot = net_find_free_tx_slot_locked()) < 0)
+    while (net.active && generation == net.stats.resets &&
+           (slot = net_find_free_tx_slot_locked()) < 0)
         task_sleep(&net.tx_wait, &net.lock, WAIT_FOREVER);
     if (!net.active || net.failed || generation != net.stats.resets) {
         spin_unlock(&net.lock);
@@ -273,7 +280,8 @@ int virtio_net_receive(void *frame, u32 capacity, u32 *length, u64 deadline)
 
     spin_lock(&net.lock);
     u64 generation = net.stats.resets;
-    while (net.active && net.rx_completions.count == 0) {
+    while (net.active && generation == net.stats.resets &&
+           net.rx_completions.count == 0) {
         if (task_sleep(&net.rx_wait, &net.lock, deadline) < 0) {
             spin_unlock(&net.lock);
             return -1;
@@ -448,13 +456,15 @@ static int net_validate_response(const u8 *frame, u32 length, u32 sequence)
 static int net_wait_tx_idle(u64 deadline)
 {
     spin_lock(&net.lock);
-    while (net.active && net.pending_tx != 0) {
+    u64 generation = net.stats.resets;
+    while (net.active && generation == net.stats.resets && net.pending_tx != 0) {
         if (task_sleep(&net.tx_wait, &net.lock, deadline) < 0) {
             spin_unlock(&net.lock);
             return -1;
         }
     }
-    int result = net.active && !net.failed ? 0 : -1;
+    int result = net.active && !net.failed && generation == net.stats.resets ?
+                 0 : -1;
     spin_unlock(&net.lock);
     return result;
 }
@@ -546,17 +556,23 @@ void virtio_net_intr(void)
             break;
         }
         int slot = net_find_rx_slot_locked(descriptor);
-        if (slot < 0 || net_validate_header_locked(slot) < 0 ||
-            used_length < VIRTIO_NET_HDR_SIZE + ETHERNET_HEADER_SIZE ||
-            used_length > VIRTIO_NET_HDR_SIZE + ETHERNET_MAX_FRAME) {
+        if (slot < 0) {
             net_fail_locked("rx-ownership");
             break;
+        }
+        if (used_length > VIRTIO_NET_HDR_SIZE + ETHERNET_MAX_FRAME) {
+            net_fail_locked("rx-length");
+            break;
+        }
+        if (net_validate_header_locked(slot) < 0 ||
+            used_length < VIRTIO_NET_HDR_SIZE + ETHERNET_HEADER_SIZE) {
+            net_drop_rx_locked(slot);
+            continue;
         }
         net.rx_queue.desc[descriptor].len = used_length;
         net.rx[slot].state = NET_RX_COMPLETED;
         if (net_completion_push(&net.rx_completions, slot) < 0) {
-            net.stats.rx_dropped++;
-            net_repost_rx_locked(slot);
+            net_drop_rx_locked(slot);
         } else {
             task_wake(&net.rx_wait, 1);
         }
