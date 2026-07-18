@@ -24,6 +24,6 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/arp.c" \
   -o "$tmp/test_m5_arp"
 ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
-  UBSAN_OPTIONS=halt_on_error=1 "$tmp/test_m5_arp"
+  UBSAN_OPTIONS=halt_on_error=1 timeout 15s "$tmp/test_m5_arp"
 
 echo 'PASS: M5 ARP cache and resolution behavior'
