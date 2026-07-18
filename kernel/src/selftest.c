@@ -14,6 +14,16 @@
 #define M3_ALL_DONE         (M2C_ALL_DONE | M3_VIRTQUEUE_DONE | \
                              M3_BLOCK_IRQ_DONE | M3_BLOCK_STRESS_DONE | \
                              M3_FATFS_DONE)
+#define M4_NET_LINK_DONE   (1U << 9)
+#define M4_NET_IRQ_DONE    (1U << 10)
+#define M4_NET_TX_DONE     (1U << 11)
+#define M4_NET_RX_DONE     (1U << 12)
+#define M4_NET_RESET_DONE  (1U << 13)
+#define M4_NET_STRESS_DONE (1U << 14)
+#define M4_ALL_DONE        (M3_ALL_DONE | M4_NET_LINK_DONE | \
+                            M4_NET_IRQ_DONE | M4_NET_TX_DONE | \
+                            M4_NET_RX_DONE | M4_NET_RESET_DONE | \
+                            M4_NET_STRESS_DONE)
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -61,12 +71,31 @@ void m3_mark_block_irq(void) { m3_mark(M3_BLOCK_IRQ_DONE); }
 void m3_mark_block_stress(void) { m3_mark(M3_BLOCK_STRESS_DONE); }
 void m3_mark_fatfs(void) { m3_mark(M3_FATFS_DONE); }
 
+static void m4_mark(u32 bit)
+{
+#ifdef QS_M4_TEST
+    mark(bit);
+#else
+    (void)bit;
+#endif
+}
+
+void m4_mark_net_link(void) { m4_mark(M4_NET_LINK_DONE); }
+void m4_mark_net_irq(void) { m4_mark(M4_NET_IRQ_DONE); }
+void m4_mark_net_tx(void) { m4_mark(M4_NET_TX_DONE); }
+void m4_mark_net_rx(void) { m4_mark(M4_NET_RX_DONE); }
+void m4_mark_net_reset(void) { m4_mark(M4_NET_RESET_DONE); }
+void m4_mark_net_stress(void) { m4_mark(M4_NET_STRESS_DONE); }
+
 void m2c_selftest_poll(void)
 {
 #ifdef QS_M2C_TEST
     u32 required = M2C_ALL_DONE;
 #ifdef QS_M3_TEST
     required = M3_ALL_DONE;
+#endif
+#ifdef QS_M4_TEST
+    required = M4_ALL_DONE;
 #endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
@@ -78,7 +107,11 @@ void m2c_selftest_poll(void)
         return;
 
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
-#ifdef QS_M3_STRESS
+#ifdef QS_M4_STRESS
+    printk("QS:TEST_PASS:m4-stress\n");
+#elif defined(QS_M4_TEST)
+    printk("QS:TEST_PASS:m4-smoke\n");
+#elif defined(QS_M3_STRESS)
     printk("QS:TEST_PASS:m3-stress\n");
 #elif defined(QS_M3_TEST)
     printk("QS:TEST_PASS:m3-smoke\n");

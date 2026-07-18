@@ -22,6 +22,8 @@
 #include <timeros/syscall.h>
 #include <timeros/task.h>
 #include <timeros/virtio.h>
+#include <timeros/virtio_net.h>
+#include <timeros/virtio_net_completion.h>
 #include <timeros/bio.h>
 
 /* trap.c */
