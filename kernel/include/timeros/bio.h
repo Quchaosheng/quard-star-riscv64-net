@@ -1,6 +1,8 @@
 #ifndef TOS_BUF_H
 #define TOS_BUF_H
 
+#include <timeros/wait.h>
+
 #define MAXOPBLOCKS 10 // max # of blocks any FS op writes
 #define NBUF (MAXOPBLOCKS * 3) // size of disk block cache
 #define BSIZE 1024 // block size
@@ -14,6 +16,7 @@ struct buf {
 	int refcnt;  //记录有多少进程在使用该缓冲块
 	struct buf *prev; // LRU cache list
 	struct buf *next;
+	struct sleeplock data_lock;
 	char data[BSIZE]; //硬盘数据存储位置
 };
 

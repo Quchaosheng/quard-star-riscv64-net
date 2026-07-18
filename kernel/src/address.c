@@ -492,6 +492,9 @@ PageTable kvmmake(void)
     // map virtio MMIO region for runtime interrupt/data path.
     PageTable_map(&pt, virt_addr_from_size_t(VIRTIO0), phys_addr_from_size_t(VIRTIO0),
                     PAGE_SIZE, PTE_R | PTE_W );
+    PageTable_map(&pt, virt_addr_from_size_t(PLIC_BASE),
+                    phys_addr_from_size_t(PLIC_BASE), PLIC_SIZE,
+                    PTE_R | PTE_W);
     PageTable_map(&pt, virt_addr_from_size_t(QEMU_TEST_BASE),
                     phys_addr_from_size_t(QEMU_TEST_BASE), PAGE_SIZE,
                     PTE_R | PTE_W);

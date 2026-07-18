@@ -96,9 +96,9 @@ void os_main(const void *fdt)
    frame_alloctor_init();
    //初始化内存
    kvminit();
+   binit();
    //初始化磁盘
    virtio_disk_init();
-   virtio_disk_smoke_test();
    //初始化进程
    procinit();
    //加载initproc进程

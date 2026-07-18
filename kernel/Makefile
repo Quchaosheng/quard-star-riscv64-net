@@ -23,6 +23,7 @@ SRCS_C = \
 	app.c \
 	cpu.c \
 	timer.c \
+	plic.c \
 	spinlock.c \
 	wait.c \
 	selftest.c \

@@ -10,6 +10,7 @@
 #include <timeros/cpu.h>
 #include <timeros/loader.h>
 #include <timeros/memory.h>
+#include <timeros/plic.h>
 #include <timeros/riscv.h>
 #include <timeros/sbi.h>
 #include <timeros/selftest.h>
