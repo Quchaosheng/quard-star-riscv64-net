@@ -70,15 +70,31 @@ static void test_wait_and_notify(void)
     sys_sem_free(sem);
 }
 
+static void test_try_wait_consumes_available_token(void)
+{
+    sys_sem_t sem = sys_sem_create(1);
+    assert(sem != SYS_SEM_INVALID);
+    assert(sys_sem_wait(sem, -1) == NET_ERR_OK);
+    assert(sys_sem_wait(sem, -1) == NET_ERR_TMO);
+    sys_sem_free(sem);
+}
+
+static void test_try_wait_returns_immediately_when_empty(void)
+{
+    sys_sem_t sem = sys_sem_create(0);
+    assert(sem != SYS_SEM_INVALID);
+
+    net_time_t start;
+    sys_time_curr(&start);
+    assert(sys_sem_wait(sem, -1) == NET_ERR_TMO);
+    assert(sys_time_goes(&start) < 100);
+    sys_sem_free(sem);
+}
+
 static void test_invalid_arguments(void)
 {
     assert(sys_sem_create(-1) == SYS_SEM_INVALID);
     assert(sys_sem_wait(SYS_SEM_INVALID, 1) == NET_ERR_PARAM);
-
-    sys_sem_t sem = sys_sem_create(0);
-    assert(sem != SYS_SEM_INVALID);
-    assert(sys_sem_wait(sem, -1) == NET_ERR_PARAM);
-    sys_sem_free(sem);
 
     assert(sys_time_goes(0) == 0);
     sys_time_curr(0);
@@ -92,6 +108,8 @@ int main(void)
     test_monotonic_time();
     test_timed_wait();
     test_wait_and_notify();
+    test_try_wait_consumes_available_token();
+    test_try_wait_returns_immediately_when_empty();
     test_invalid_arguments();
     return 0;
 }
