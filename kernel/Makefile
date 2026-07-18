@@ -54,6 +54,8 @@ NET_SRCS_C = \
 	net/tools.c \
 	net/ether.c \
 	net/arp.c \
+	net/ipv4.c \
+	net/icmpv4.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
