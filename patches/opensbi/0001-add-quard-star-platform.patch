@@ -176,9 +176,9 @@ index 0000000..72f9db0
 +
 +static int quard_star_early_init(bool cold_boot)
 +{
-+
-+		return 0;
-+
++	if (cold_boot)
++		__atomic_store_n((u32 *)0x8000, 1, __ATOMIC_RELEASE);
++	return 0;
 +}
 +
 +static int quard_star_final_init(bool cold_boot)

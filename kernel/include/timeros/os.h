@@ -7,11 +7,12 @@
 #include <timeros/address.h>
 #include <timeros/assert.h>
 #include <timeros/context.h>
+#include <timeros/cpu.h>
 #include <timeros/loader.h>
 #include <timeros/memory.h>
 #include <timeros/riscv.h>
 #include <timeros/sbi.h>
-#include <timeros/stack.h>
+#include <timeros/spinlock.h>
 #include <timeros/stdio.h>
 #include <timeros/string.h>
 #include <timeros/syscall.h>

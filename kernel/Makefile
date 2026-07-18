@@ -22,8 +22,9 @@ SRCS_C = \
 	syscall.c \
 	string.c \
 	app.c \
+	cpu.c \
 	timer.c \
-	stack.c \
+	spinlock.c \
 	address.c \
 	task.c \
 	assert.c \
@@ -33,12 +34,14 @@ SRCS_C = \
 	virtio_disk.c \
 	bio.c \
 
-INCLUDE:=-I./include
+INCLUDE:=-I./include -I../third_party/dtc/libfdt
 SRC:=./src
 LIB:=./lib
+LIBFDT:=../third_party/dtc/libfdt
 # 将源文件替换为 .o 文件
 OBJS = $(SRCS_ASM:.S=.o)
 OBJS += $(SRCS_C:.c=.o)
+OBJS += fdt.o fdt_ro.o
 
 
 all: build_app os.elf
@@ -53,6 +56,12 @@ os.elf: ${OBJS}
 	${CC} ${CFLAGS} $(INCLUDE) -c -o $@ $<
 
 %.o : $(LIB)/%.c
+	${CC} ${CFLAGS} $(INCLUDE) -c -o $@ $<
+
+fdt.o: $(LIBFDT)/fdt.c
+	${CC} ${CFLAGS} $(INCLUDE) -c -o $@ $<
+
+fdt_ro.o: $(LIBFDT)/fdt_ro.c
 	${CC} ${CFLAGS} $(INCLUDE) -c -o $@ $<
 
 %.o : $(SRC)/%.S

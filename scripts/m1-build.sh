@@ -2,8 +2,11 @@
 set -eu
 
 root=${QS_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
-out=$root/out/m1
+stage=${QS_STAGE:-m1}
+out=$root/out/$stage
 cache=${QS_BUILD_CACHE:-$HOME/.cache/quard-star-riscv64-net/m1}
+sbi_dts=${QS_SBI_DTS:-$root/platform/quard-star/dts/quard_star_sbi.dts}
+kernel_dts=${QS_KERNEL_DTS:-$root/platform/quard-star/dts/quard_star_kernel.dts}
 
 prepare_tree() {
   name=$1
@@ -66,9 +69,9 @@ riscv64-unknown-elf-objcopy -O binary -S \
   "$out/boot/lowlevel_fw.elf" "$out/boot/lowlevel_fw.bin"
 
 dtc -I dts -O dtb -o "$out/dts/opensbi-domain.dtb" \
-  "$root/platform/quard-star/dts/quard_star_sbi.dts"
+  "$sbi_dts"
 dtc -I dts -O dtb -o "$out/dts/kernel.dtb" \
-  "$root/platform/quard-star/dts/quard_star_kernel.dts"
+  "$kernel_dts"
 
 truncate -s 32M "$out/fw/fw.bin"
 dd if="$out/boot/lowlevel_fw.bin" of="$out/fw/fw.bin" conv=notrunc bs=1K seek=0 status=none
@@ -79,4 +82,4 @@ dd if="$out/trusted/trusted_fw.bin" of="$out/fw/fw.bin" conv=notrunc bs=1K seek=
 dd if="$out/kernel/os.bin" of="$out/fw/fw.bin" conv=notrunc bs=1K seek=8192 status=none
 truncate -s 64M "$out/disk/disk.img"
 
-echo "M1 firmware: $out/fw/fw.bin"
+echo "$stage firmware: $out/fw/fw.bin"

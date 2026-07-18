@@ -8,6 +8,7 @@ void uart_puts(char *s)
 
 
 static char out_buf[1000]; // buffer for _vprintf()
+static struct spinlock print_lock;
 static int _vprintf(const char* s, va_list vl)
 {
 	int res = _vsnprintf(NULL, -1, s, vl);
@@ -23,10 +24,12 @@ static int _vprintf(const char* s, va_list vl)
 int printk(const char* s, ...)
 {
 	int res = 0;
+	spin_lock(&print_lock);
 	va_list vl;
 	va_start(vl, s);
 	res = _vprintf(s, vl);
 	va_end(vl);
+	spin_unlock(&print_lock);
 	return res;
 }
 
