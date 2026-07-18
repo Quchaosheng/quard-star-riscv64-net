@@ -34,6 +34,8 @@ test-host:
 	./tests/host/test_m5_ether.sh
 	./tests/host/test_m5_arp.sh
 	./tests/host/test_m5_ipv4_icmp.sh
+	./tests/host/test_m5_stack.sh
+	./tests/host/test_m5_stack_contracts.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh

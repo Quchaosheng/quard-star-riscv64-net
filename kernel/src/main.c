@@ -1,4 +1,7 @@
 #include <timeros/os.h>
+#ifdef QS_M5_TEST
+#include <timeros/net/net_stack.h>
+#endif
 
 void os_main(const void *fdt);
 
@@ -99,15 +102,23 @@ void os_main(const void *fdt)
    binit();
    //初始化磁盘
    virtio_disk_init();
-#ifdef QS_M4_TEST
+#if defined(QS_M4_TEST) || defined(QS_M5_TEST)
    if (virtio_net_init() < 0)
       panic("virtio net init");
+#endif
+#ifdef QS_M5_TEST
+   if (net_stack_init() < 0)
+      panic("network stack init");
 #endif
    //初始化进程
    procinit();
    //加载initproc进程
    load_app(0);
    app_init(0);
+#ifdef QS_M5_TEST
+   if (task_create_kernel(net_stack_worker, net_stack_default()) < 0)
+      panic("network worker task");
+#endif
 
    //映射内核
    kvminithart();

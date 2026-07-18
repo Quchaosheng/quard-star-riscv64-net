@@ -24,6 +24,8 @@ typedef struct TaskControlBlock {
     u64 kstack;
     u64 ustack;
     u64 entry;
+    void (*kernel_entry)(void *arg);
+    void *kernel_arg;
     PageTable pagetable;
     u64 exit_code;
     int last_hart;
@@ -38,6 +40,7 @@ void procinit(void);
 int allocpid(void);
 TaskControlBlock *task_create_pt(size_t app_id);
 void app_init(size_t app_id);
+int task_create_kernel(void (*entry)(void *), void *arg);
 u64 get_current_trap_cx(void);
 u64 current_user_token(void);
 struct TaskControlBlock *current_proc(void);
