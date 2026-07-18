@@ -91,8 +91,10 @@ holding the task-table lock.
 ## Buffer Cache Scope
 
 M3 protects the existing buffer-cache list and reference counts with one
-sleeping lock. Cache misses, LRU selection, reference changes, and list moves
-are serialized. The cache lock is released before waiting for device I/O so
+sleeping metadata lock. Each buffer also has a sleeping data lock so two tasks
+cannot fill or modify the same block concurrently. Cache misses, LRU selection,
+reference changes, and list moves are serialized. The metadata lock is
+released before acquiring a buffer data lock or waiting for device I/O, so
 unrelated cached blocks remain usable.
 
 This milestone does not redesign the cache, add writeback, or add multiple
