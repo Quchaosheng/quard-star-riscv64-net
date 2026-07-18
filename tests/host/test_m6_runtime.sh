@@ -7,6 +7,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   -fno-sanitize-recover=undefined \
+  -DNET_SYS_TEST \
   -pthread -I"$root/kernel/include" -I"$root/kernel/include/timeros/net" \
   "$root/tests/host/test_m6_runtime.c" \
   "$root/tests/host/net_host_port.c" \
