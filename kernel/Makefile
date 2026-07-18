@@ -42,7 +42,14 @@ SRCS_C = \
 	virtio_disk.c \
 	bio.c \
 
-INCLUDE := -I./include -I../third_party/dtc/libfdt -I../platform/quard-star/include
+NET_SRCS_C = \
+	net/nlocker.c \
+	net/nlist.c \
+	net/mblock.c \
+	net/fixq.c \
+	net/pktbuf.c \
+
+INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
 SRCS_C += fatfs_port.c fatfs_test.c
 INCLUDE += -I$(FATFS_DIR)
@@ -53,6 +60,8 @@ LIB := ./lib
 LIBFDT := ../third_party/dtc/libfdt
 OBJS = $(SRCS_ASM:.S=.o)
 OBJS += $(SRCS_C:.c=.o)
+NET_OBJS = $(NET_SRCS_C:net/%.c=net_%.o)
+OBJS += $(NET_OBJS)
 OBJS += fdt.o fdt_ro.o
 ifeq ($(FATFS),1)
 OBJS += fatfs_ff.o
@@ -70,6 +79,9 @@ os.elf: ${OBJS}
 	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $<
 
 %.o: $(LIB)/%.c
+	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $<
+
+net_%.o: $(SRC)/net/%.c
 	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $<
 
 fdt.o: $(LIBFDT)/fdt.c
