@@ -7,6 +7,11 @@
 #include <timeros/net/timer.h>
 #include <timeros/net/tools.h>
 
+#ifdef QS_M6A_TEST
+#include <timeros/selftest.h>
+extern int printk(const char *format, ...);
+#endif
+
 static net_timer_t cache_timer;
 static arp_entry_t cache_entries[ARP_CACHE_SIZE];
 static mblock_t cache_blocks;
@@ -98,6 +103,15 @@ static void arp_set_entry(arp_entry_t *entry, netif_t *netif,
 static void arp_cache_tmo(net_timer_t *timer, void *arg)
 {
     nlist_node_t *node = nlist_first(&cache_list);
+
+#ifdef QS_M6A_TEST
+    static int reported;
+    if (!reported) {
+        reported = 1;
+        printk("QS:M6_ARP_TIMER_OK\n");
+        m6_mark_arp_timer();
+    }
+#endif
 
     (void)timer;
     (void)arg;

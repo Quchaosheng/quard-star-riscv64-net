@@ -16,7 +16,7 @@ tap_created=0
 peer_pid=
 smoke_pid=
 
-if [ "$test_name" != m5-smoke ]; then
+if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ]; then
   echo "error: unsupported M5 test name $test_name" >&2
   exit 1
 fi
@@ -88,7 +88,11 @@ export QS_ROOT=$root
 export QS_STAGE=$stage
 export QS_TEST_NAME=$test_name
 export QS_TAP_IFACE=$iface
-export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK QS:TEST_PASS:$test_name"
+extra_m6_markers=
+if [ "$test_name" = m6a-smoke ]; then
+  extra_m6_markers='QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK'
+fi
+export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK $extra_m6_markers QS:TEST_PASS:$test_name"
 export QS_SMOKE_TIMEOUT=${QS_SMOKE_TIMEOUT:-60}
 
 "$script_root/scripts/m2c-smoke.sh" &
@@ -112,6 +116,16 @@ fi
 if [ "$peer_status" -ne 0 ]; then
   echo "error: M5 peer exit status $peer_status" >&2
   exit 1
+fi
+if [ "$test_name" = m6a-smoke ]; then
+  for marker in QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK \
+    QS:TEST_PASS:m6a-smoke; do
+    count=$(tr -d '\000\r' < "$out/qemu.log" | grep -Fxc "$marker" || true)
+    if [ "$count" -ne 1 ]; then
+      echo "error: expected exactly one $marker, found $count" >&2
+      exit 1
+    fi
+  done
 fi
 if ! python3 - "$stats" "$raw_count" <<'PY'
 import json

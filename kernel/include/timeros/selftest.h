@@ -20,5 +20,8 @@ void m4_mark_net_reset(void);
 void m4_mark_net_stress(void);
 void m5_mark_net_arp(void);
 void m5_mark_net_ping(void);
+void m6_mark_queue(void);
+void m6_mark_arp_timer(void);
+void m6_mark_loop(void);
 
 #endif

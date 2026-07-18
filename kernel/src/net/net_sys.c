@@ -2,6 +2,8 @@
 
 #include <timeros/net/net_sys.h>
 
+#include <timeros/net/net_cfg.h>
+
 #include <limits.h>
 
 #ifdef __riscv
@@ -12,7 +14,6 @@
 #include <timeros/wait.h>
 
 #define NET_SYS_SEM_MAX 32
-#define MTIME_TICKS_PER_MS 10000ULL
 
 struct net_sys_sem {
     struct semaphore sem;
@@ -42,7 +43,7 @@ net_err_t net_sys_init(void)
 void sys_time_curr(net_time_t *time)
 {
     if (time != 0)
-        *time = r_mtime() / MTIME_TICKS_PER_MS;
+        *time = r_mtime() / NET_TIME_TICKS_PER_MS;
 }
 
 sys_sem_t sys_sem_create(int initial_count)
@@ -101,7 +102,7 @@ net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
     if (timeout_ms == 0)
         return sem_wait(&sem->sem) == 0 ? NET_ERR_OK : NET_ERR_SYS;
 
-    u64 deadline = r_mtime() + (u64)timeout_ms * MTIME_TICKS_PER_MS;
+    u64 deadline = r_mtime() + (u64)timeout_ms * NET_TIME_TICKS_PER_MS;
     return sem_timedwait(&sem->sem, deadline) == 0 ? NET_ERR_OK : NET_ERR_TMO;
 }
 
