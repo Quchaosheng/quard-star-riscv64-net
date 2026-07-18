@@ -8,5 +8,9 @@ void m2c_mark_ipi(void);
 void m2c_mark_rfence(void);
 void m2c_mark_sched(void);
 void m2c_selftest_poll(void);
+void m3_mark_virtqueue(void);
+void m3_mark_block_irq(void);
+void m3_mark_block_stress(void);
+void m3_mark_fatfs(void);
 
 #endif

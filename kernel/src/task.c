@@ -26,6 +26,8 @@ static void task_reset_wait(struct TaskControlBlock *p)
 static void task_first_run(void)
 {
     spin_unlock(&task_lock);
+    if (current_proc()->pid == 0)
+        virtio_disk_smoke_test();
     trap_return();
 }
 

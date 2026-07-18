@@ -7,6 +7,13 @@
 #define M2C_SCHED_DONE  (1U << 4)
 #define M2C_ALL_DONE    (M2C_ALLOC_DONE | M2C_WAIT_DONE | M2C_IPI_DONE | \
                          M2C_RFENCE_DONE | M2C_SCHED_DONE)
+#define M3_VIRTQUEUE_DONE   (1U << 5)
+#define M3_BLOCK_IRQ_DONE   (1U << 6)
+#define M3_BLOCK_STRESS_DONE (1U << 7)
+#define M3_FATFS_DONE       (1U << 8)
+#define M3_ALL_DONE         (M2C_ALL_DONE | M3_VIRTQUEUE_DONE | \
+                             M3_BLOCK_IRQ_DONE | M3_BLOCK_STRESS_DONE | \
+                             M3_FATFS_DONE)
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -40,10 +47,28 @@ void m2c_mark_ipi(void) { mark(M2C_IPI_DONE); }
 void m2c_mark_rfence(void) { mark(M2C_RFENCE_DONE); }
 void m2c_mark_sched(void) { mark(M2C_SCHED_DONE); }
 
+static void m3_mark(u32 bit)
+{
+#ifdef QS_M3_TEST
+    mark(bit);
+#else
+    (void)bit;
+#endif
+}
+
+void m3_mark_virtqueue(void) { m3_mark(M3_VIRTQUEUE_DONE); }
+void m3_mark_block_irq(void) { m3_mark(M3_BLOCK_IRQ_DONE); }
+void m3_mark_block_stress(void) { m3_mark(M3_BLOCK_STRESS_DONE); }
+void m3_mark_fatfs(void) { m3_mark(M3_FATFS_DONE); }
+
 void m2c_selftest_poll(void)
 {
 #ifdef QS_M2C_TEST
-    if (__atomic_load_n(&completed, __ATOMIC_ACQUIRE) != M2C_ALL_DONE)
+    u32 required = M2C_ALL_DONE;
+#ifdef QS_M3_TEST
+    required = M3_ALL_DONE;
+#endif
+    if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
 
     u64 elapsed = r_mtime() - started_at;
@@ -53,7 +78,11 @@ void m2c_selftest_poll(void)
         return;
 
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
-#ifdef QS_M2C_STRESS
+#ifdef QS_M3_STRESS
+    printk("QS:TEST_PASS:m3-stress\n");
+#elif defined(QS_M3_TEST)
+    printk("QS:TEST_PASS:m3-smoke\n");
+#elif defined(QS_M2C_STRESS)
     printk("QS:TEST_PASS:m2c-stress\n");
 #else
     printk("QS:TEST_PASS:m2c-smoke\n");

@@ -32,8 +32,20 @@ static int handle_interrupt(reg_t scause)
 		timer_tick();
 		return 1;
 	case IRQ_S_EXT:
-		virtio_disk_intr();
-		return 1;
+	{
+		u32 irq = plic_claim();
+		if (irq == 0)
+			return 1;
+		int handled = 1;
+		if (irq == PLIC_VIRTIO0_IRQ)
+			virtio_disk_intr();
+		else {
+			printk("unexpected PLIC irq:%d\n", irq);
+			handled = -1;
+		}
+		plic_complete(irq);
+		return handled;
+	}
 	default:
 		printk("undefined interrupt scause:%lx\n", scause);
 		return -1;
