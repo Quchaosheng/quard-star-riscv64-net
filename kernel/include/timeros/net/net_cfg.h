@@ -11,5 +11,7 @@
 #define NETIF_DEV_CNT 4
 #define NETIF_INQ_SIZE 16
 #define NETIF_OUTQ_SIZE 16
+#define ARP_CACHE_SIZE 8
+#define ARP_MAX_PKT_WAIT 8
 
 #endif
