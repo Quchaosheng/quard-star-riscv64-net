@@ -7,6 +7,12 @@
 #include <timeros/net/netif_virtio.h>
 #include <timeros/net/pktbuf.h>
 
+#ifdef QS_M5_TEST
+#include <timeros/memory.h>
+#include <timeros/selftest.h>
+extern int printk(const char *format, ...);
+#endif
+
 #ifdef __riscv
 #include <timeros/riscv.h>
 static u64 net_stack_now(void)
@@ -23,8 +29,68 @@ static u64 net_stack_now(void)
 
 #define NET_STACK_RX_DEADLINE 50000000ULL
 
+#ifdef QS_M5_TEST
+#define NET_STACK_PROBE_TIMEOUT 200000000ULL
+#define NET_STACK_PROBE_IDENTIFIER 0x4d35
+#define NET_STACK_PROBE_SEQUENCE 1
+#endif
+
 static netif_t *stack_netif;
 static int stack_initialized;
+
+#ifdef QS_M5_TEST
+static ipaddr_t probe_peer;
+static int probe_started;
+static int probe_arp_reported;
+static int probe_ping_reported;
+static u64 probe_deadline;
+
+static void net_stack_probe_fail(int code)
+{
+    printk("QS:TEST_FAIL:m5-net:%d\n", code);
+    *(volatile u32 *)(uintptr_t)QEMU_TEST_BASE = QEMU_TEST_FAIL;
+    for (;;)
+        asm volatile("wfi");
+}
+
+static void net_stack_probe(netif_t *netif)
+{
+    if (netif == 0)
+        return;
+    if (!probe_started) {
+        if (ipaddr_from_str(&probe_peer, "192.168.100.1") != NET_ERR_OK)
+            net_stack_probe_fail(1);
+        static const u8 payload[] = "quard-star-m5";
+        net_err_t err = icmpv4_out_echo(netif, &probe_peer,
+                                        NET_STACK_PROBE_IDENTIFIER,
+                                        NET_STACK_PROBE_SEQUENCE, payload,
+                                        (int)sizeof(payload) - 1);
+        if (err < 0)
+            net_stack_probe_fail(2);
+        probe_started = 1;
+        probe_deadline = net_stack_now() + NET_STACK_PROBE_TIMEOUT;
+    }
+
+    if (!probe_arp_reported && arp_find(netif, &probe_peer) != 0) {
+        probe_arp_reported = 1;
+        printk("QS:M5_ARP_OK\n");
+        m5_mark_net_arp();
+    }
+
+    icmpv4_stats_t stats;
+    icmpv4_get_stats(&stats);
+    if (!probe_ping_reported && stats.last_reply_identifier ==
+                                  NET_STACK_PROBE_IDENTIFIER &&
+        stats.last_reply_sequence == NET_STACK_PROBE_SEQUENCE) {
+        probe_ping_reported = 1;
+        printk("QS:M5_PING_OK\n");
+        m5_mark_net_ping();
+    }
+
+    if (!probe_ping_reported && net_stack_now() >= probe_deadline)
+        net_stack_probe_fail(3);
+}
+#endif
 
 net_err_t net_stack_init(void)
 {
@@ -89,6 +155,9 @@ void net_stack_worker(void *arg)
     if (netif == 0)
         netif = stack_netif;
     for (;;) {
+#ifdef QS_M5_TEST
+        net_stack_probe(netif);
+#endif
         (void)net_stack_poll_once(netif,
                                   net_stack_now() + NET_STACK_RX_DEADLINE);
     }

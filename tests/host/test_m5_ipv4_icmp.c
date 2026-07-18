@@ -184,6 +184,18 @@ int main(void)
     assert(reply_icmp->type == ICMPV4_ECHO_REPLY);
     assert(checksum16(0, reply_icmp, 12, 0, 1) == 0);
 
+    icmpv4_stats_t stats;
+    icmpv4_get_stats(&stats);
+    assert(stats.echo_requests == 1);
+    assert(stats.echo_replies == 0);
+    make_ipv4_icmp(frame, local_mac, peer_mac, local_ip, peer_ip,
+                   ICMPV4_ECHO_REPLY, 0, 0);
+    inject(netif, frame);
+    icmpv4_get_stats(&stats);
+    assert(stats.echo_replies == 1);
+    assert(stats.last_reply_identifier == 0x1234);
+    assert(stats.last_reply_sequence == 9);
+
     make_ipv4_icmp(frame, local_mac, peer_mac, local_ip, peer_ip,
                    ICMPV4_ECHO_REQUEST, 0, 1);
     pktbuf_t *bad = pktbuf_alloc(ETH_FRAME_MIN);

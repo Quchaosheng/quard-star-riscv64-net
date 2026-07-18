@@ -18,5 +18,7 @@ void m4_mark_net_tx(void);
 void m4_mark_net_rx(void);
 void m4_mark_net_reset(void);
 void m4_mark_net_stress(void);
+void m5_mark_net_arp(void);
+void m5_mark_net_ping(void);
 
 #endif
