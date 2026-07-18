@@ -124,6 +124,10 @@ void sys_sem_notify(sys_sem_t sem)
 #include <pthread.h>
 #include <time.h>
 
+#ifdef NET_SYS_TEST
+void net_sys_test_wait_hook(void);
+#endif
+
 void *malloc(size_t size);
 void free(void *ptr);
 
@@ -206,8 +210,12 @@ net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
         if (sem->count == 0)
             result = ETIMEDOUT;
     } else if (timeout_ms == 0) {
-        while (sem->count == 0 && result == 0)
+        while (sem->count == 0 && result == 0) {
+#ifdef NET_SYS_TEST
+            net_sys_test_wait_hook();
+#endif
             result = pthread_cond_wait(&sem->condition, &sem->mutex);
+        }
     } else {
         struct timespec deadline;
         result = clock_gettime(CLOCK_MONOTONIC, &deadline);
@@ -219,9 +227,13 @@ net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
                 deadline.tv_nsec -= 1000000000L;
             }
         }
-        while (sem->count == 0 && result == 0)
+        while (sem->count == 0 && result == 0) {
+#ifdef NET_SYS_TEST
+            net_sys_test_wait_hook();
+#endif
             result = pthread_cond_timedwait(&sem->condition, &sem->mutex,
                                             &deadline);
+        }
     }
 
     net_err_t error = NET_ERR_OK;
