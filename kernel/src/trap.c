@@ -7,7 +7,7 @@
 #define IRQ_S_EXT   9
 #define EXC_U_ECALL 8
 
-static int handle_interrupt(reg_t scause, int from_user)
+static int handle_interrupt(reg_t scause)
 {
 	reg_t cause_code = scause & SCAUSE_CODE_MASK;
 	if ((scause & SCAUSE_INTERRUPT_MASK) == 0) {
@@ -15,10 +15,7 @@ static int handle_interrupt(reg_t scause, int from_user)
 	}
 	switch (cause_code) {
 	case IRQ_S_TIMER:
-		set_next_trigger();
-		if (from_user) {
-			schedule();
-		}
+		timer_tick();
 		return 1;
 	case IRQ_S_EXT:
 		virtio_disk_intr();
@@ -48,7 +45,7 @@ void kerneltrap()
 	if ((sstatus & SSTATUS_SPP) == 0) {
 		panic("kerneltrap: not from supervisor mode");
 	}
-	if (handle_interrupt(scause, 0) <= 0) {
+	if (handle_interrupt(scause) <= 0) {
 		panic("kerneltrap: unexpected trap");
 	}
 
@@ -62,8 +59,10 @@ void trap_handler()
 	TrapContext* cx = (TrapContext*)get_current_trap_cx();
 	reg_t scause = r_scause();
 	reg_t cause_code = scause & SCAUSE_CODE_MASK;
-	int intr = handle_interrupt(scause, 1);
+	int intr = handle_interrupt(scause);
 	if (intr > 0) {
+		if (cpu_take_resched())
+			schedule();
 		trap_return();
 		return;
 	}
@@ -86,11 +85,15 @@ void trap_handler()
 		break;
 	}
 
+	if (cpu_take_resched())
+		schedule();
 	trap_return();
 }
 
 void trap_return()
 {
+	TrapContext *cx = (TrapContext *)(uintptr_t)get_current_trap_cx();
+	cx->kernel_tp = (reg_t)(uintptr_t)cpu_this();
 	set_user_trap_entry();
 	u64 trap_cx_ptr = TRAPFRAME;
 	u64 user_satp = current_user_token();

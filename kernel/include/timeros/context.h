@@ -1,7 +1,7 @@
 #ifndef TOS_CONTEXT_H__
 #define TOS_CONTEXT_H__
 
-#include "os.h"
+#include <timeros/types.h>
 
 /*S模式的trap上下文*/
 typedef struct TrapContext {
@@ -44,6 +44,7 @@ typedef struct TrapContext {
 	reg_t kernel_satp;     //内核地址空间的satp值
 	reg_t kernel_sp;       //内核栈栈顶的虚拟地址
 	reg_t trap_handler;    //内核中 trap handler 入口的虚拟地址
+	reg_t kernel_tp;
 }TrapContext;
 
 /* S模式的任务上下文 */

@@ -1,9 +1,12 @@
 #ifndef TOS_CPU_H__
 #define TOS_CPU_H__
 
+#include <timeros/context.h>
 #include <timeros/types.h>
 
 #define MAX_CPUS 7
+
+struct TaskControlBlock;
 
 struct cpu {
     u64 hartid;
@@ -12,6 +15,12 @@ struct cpu {
     u32 online;
     int noff;
     int intena;
+    struct TaskControlBlock *proc;
+    struct TaskContext scheduler_context;
+    u32 idle;
+    u32 need_resched;
+    u64 timer_ticks;
+    u64 timer_deadline;
 };
 
 extern struct cpu cpus[MAX_CPUS];

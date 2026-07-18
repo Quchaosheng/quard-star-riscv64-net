@@ -1,30 +1,43 @@
 #include <timeros/os.h>
+
 #define CLOCK_FREQ 10000000
 #define TICKS_PER_SEC 100
 
-
-/* 设置下次时钟中断的cnt值 */
-void set_next_trigger()
+void set_next_trigger(void)
 {
-    sbi_set_timer(r_mtime() + CLOCK_FREQ / TICKS_PER_SEC);
+    struct cpu *cpu = cpu_this();
+    cpu->timer_deadline = r_mtime() + CLOCK_FREQ / TICKS_PER_SEC;
+    sbi_set_timer(cpu->timer_deadline);
 }
 
-/* 开启S模式下的时钟中断 */
-void timer_init()
+void timer_init(void)
 {
-   //开启S模式下的中断
-   intr_on();
-   //开启时钟中断
-   reg_t sie = r_sie();
-   sie |= SIE_STIE;
-   w_sie(sie);
-   //
-   set_next_trigger();
+    struct cpu *cpu = cpu_this();
+    cpu->timer_ticks = 0;
+    cpu->timer_deadline = 0;
+    __atomic_store_n(&cpu->need_resched, 0, __ATOMIC_RELAXED);
+
+    reg_t sie = r_sie();
+    w_sie(sie | SIE_STIE);
+    set_next_trigger();
+    intr_on();
 }
 
+void timer_tick(void)
+{
+    struct cpu *cpu = cpu_this();
+    cpu->timer_ticks++;
+    set_next_trigger();
+    __atomic_store_n(&cpu->need_resched, 1, __ATOMIC_RELEASE);
+}
 
-/* 以us为单位返回时间 */
-uint64_t get_time_us()
+int cpu_take_resched(void)
+{
+    return __atomic_exchange_n(&cpu_this()->need_resched, 0,
+                               __ATOMIC_ACQ_REL);
+}
+
+uint64_t get_time_us(void)
 {
     return r_mtime() / (CLOCK_FREQ / 1000000ULL);
 }
