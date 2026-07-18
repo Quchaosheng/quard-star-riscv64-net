@@ -52,6 +52,7 @@ struct virtio_net_stats {
 };
 
 int virtio_net_init(void);
+int virtio_net_get_mac(u8 *mac);
 int virtio_net_send(const void *frame, u32 length);
 int virtio_net_receive(void *frame, u32 capacity, u32 *length,
                        u64 deadline);
