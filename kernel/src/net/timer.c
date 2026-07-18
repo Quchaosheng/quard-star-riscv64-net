@@ -1,14 +1,29 @@
 #include <timeros/net/timer.h>
 
-static nlist_t timer_list;
+typedef struct _timer_pending_t {
+    nlist_t *list;
+    struct _timer_pending_t *previous;
+} timer_pending_t;
 
-static int timer_is_active(net_timer_t *timer)
+static nlist_t timer_list;
+static timer_pending_t *pending_timers;
+
+static int timer_is_scheduled(net_timer_t *timer)
 {
     nlist_node_t *node;
+    timer_pending_t *pending;
 
     nlist_for_each(node, &timer_list) {
         if (nlist_entry(node, net_timer_t, node) == timer)
             return 1;
+    }
+
+    for (pending = pending_timers; pending != 0;
+         pending = pending->previous) {
+        nlist_for_each(node, pending->list) {
+            if (nlist_entry(node, net_timer_t, node) == timer)
+                return 1;
+        }
     }
     return 0;
 }
@@ -55,6 +70,7 @@ static void insert_timer(net_timer_t *insert)
 net_err_t net_timer_init(void)
 {
     nlist_init(&timer_list);
+    pending_timers = 0;
     return NET_ERR_OK;
 }
 
@@ -63,7 +79,7 @@ net_err_t net_timer_add(net_timer_t *timer, const char *name,
 {
     if (timer == 0 || name == 0 || proc == 0 || ms <= 0)
         return NET_ERR_PARAM;
-    if (timer_is_active(timer))
+    if (timer_is_scheduled(timer))
         return NET_ERR_EXIST;
 
     timer_name_copy(timer->name, name);
@@ -105,6 +121,7 @@ net_err_t net_timer_check_tmo(int diff_ms)
 {
     nlist_t wait_list;
     nlist_node_t *node;
+    timer_pending_t pending;
 
     if (diff_ms < 0)
         return NET_ERR_PARAM;
@@ -127,16 +144,20 @@ net_err_t net_timer_check_tmo(int diff_ms)
         node = next;
     }
 
+    pending.list = &wait_list;
+    pending.previous = pending_timers;
+    pending_timers = &pending;
     while ((node = nlist_remove_first(&wait_list)) != 0) {
         net_timer_t *timer = nlist_entry(node, net_timer_t, node);
 
         timer->proc(timer, timer->arg);
         if ((timer->flags & NET_TIMER_RELOAD) != 0 &&
-            !timer_is_active(timer)) {
+            !timer_is_scheduled(timer)) {
             timer->curr = timer->reload;
             insert_timer(timer);
         }
     }
+    pending_timers = pending.previous;
     return NET_ERR_OK;
 }
 
