@@ -85,8 +85,18 @@ static int sys_sem_valid(sys_sem_t sem)
 
 net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
 {
-    if (sem == SYS_SEM_INVALID || timeout_ms < 0 || !sys_sem_valid(sem))
+    if (sem == SYS_SEM_INVALID || !sys_sem_valid(sem))
         return NET_ERR_PARAM;
+    if (timeout_ms < 0) {
+        spin_lock(&sem->sem.lock);
+        net_err_t error = NET_ERR_TMO;
+        if (sem->sem.count > 0) {
+            sem->sem.count--;
+            error = NET_ERR_OK;
+        }
+        spin_unlock(&sem->sem.lock);
+        return error;
+    }
     if (timeout_ms == 0)
         return sem_wait(&sem->sem) == 0 ? NET_ERR_OK : NET_ERR_SYS;
 
@@ -178,13 +188,16 @@ void sys_sem_free(sys_sem_t sem)
 
 net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
 {
-    if (sem == SYS_SEM_INVALID || timeout_ms < 0)
+    if (sem == SYS_SEM_INVALID)
         return NET_ERR_PARAM;
     if (pthread_mutex_lock(&sem->mutex) != 0)
         return NET_ERR_SYS;
 
     int result = 0;
-    if (timeout_ms == 0) {
+    if (timeout_ms < 0) {
+        if (sem->count == 0)
+            result = ETIMEDOUT;
+    } else if (timeout_ms == 0) {
         while (sem->count == 0 && result == 0)
             result = pthread_cond_wait(&sem->condition, &sem->mutex);
     } else {
