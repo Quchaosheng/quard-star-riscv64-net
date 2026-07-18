@@ -43,6 +43,7 @@ SRCS_C = \
 	bio.c \
 
 NET_SRCS_C = \
+	net/net_sys.c \
 	net/nlocker.c \
 	net/nlist.c \
 	net/mblock.c \
