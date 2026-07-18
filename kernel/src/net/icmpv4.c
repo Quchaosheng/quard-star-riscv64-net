@@ -19,7 +19,11 @@ static net_err_t icmpv4_echo_reply(netif_t *netif, const ipaddr_t *src,
     pktbuf_reset_acc(buf);
     header->checksum =
         x_htons(pktbuf_checksum16(buf, pktbuf_total(buf), 0, 1));
-    return ipv4_out(netif, src, NET_PROTOCOL_ICMPV4, buf);
+    pktbuf_inc_ref(buf);
+    net_err_t err = ipv4_out(netif, src, NET_PROTOCOL_ICMPV4, buf);
+    if (err >= 0)
+        pktbuf_free(buf);
+    return err;
 }
 
 static icmpv4_stats_t icmpv4_stats;
