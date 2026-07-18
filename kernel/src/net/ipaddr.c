@@ -53,6 +53,7 @@ net_err_t ipaddr_from_str(ipaddr_t *dest, const char *str)
 ipaddr_t *ipaddr_get_any(void)
 {
     static ipaddr_t any;
+
     return &any;
 }
 
@@ -96,7 +97,7 @@ int ipaddr_is_direct_broadcast(const ipaddr_t *ip,
 {
     return ip != 0 && netmask != 0 &&
            (ip->q_addr & ~netmask->q_addr) ==
-               (IPV4_ADDR_BROADCAST & ~netmask->q_addr);
+           (IPV4_ADDR_BROADCAST & ~netmask->q_addr);
 }
 
 int ipaddr_is_any(const ipaddr_t *ip)
@@ -107,6 +108,7 @@ int ipaddr_is_any(const ipaddr_t *ip)
 ipaddr_t ipaddr_get_net(const ipaddr_t *ip, const ipaddr_t *netmask)
 {
     ipaddr_t network = { 0 };
+
     if (ip != 0 && netmask != 0)
         network.q_addr = ip->q_addr & netmask->q_addr;
     return network;

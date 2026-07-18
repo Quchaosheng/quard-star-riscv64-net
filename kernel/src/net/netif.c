@@ -12,6 +12,7 @@ static const link_layer_t *link_layers[NETIF_TYPE_SIZE];
 static void netif_name_copy(char *dest, const char *src)
 {
     int i = 0;
+
     if (src != 0) {
         for (; i < NETIF_NAME_SIZE - 1 && src[i] != '\0'; i++)
             dest[i] = src[i];
@@ -24,6 +25,7 @@ static void netif_name_copy(char *dest, const char *src)
 static void netif_drain_queue(fixq_t *queue)
 {
     pktbuf_t *buf;
+
     while ((buf = (pktbuf_t *)fixq_recv(queue, -1)) != 0)
         pktbuf_free(buf);
 }
@@ -39,7 +41,7 @@ net_err_t netif_init(void)
 }
 
 netif_t *netif_open(const char *dev_name, const netif_ops_t *ops,
-                   void *ops_data)
+                    void *ops_data)
 {
     if (dev_name == 0 || ops == 0 || ops->open == 0)
         return 0;

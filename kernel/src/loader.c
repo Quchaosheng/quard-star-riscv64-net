@@ -2,7 +2,7 @@
 
 extern u64 _num_app[];
 extern char _app_names[];
-static char* app_names[MAX_TASKS];
+static char *app_names[MAX_TASKS];
 
 size_t get_num_app()
 {
@@ -13,6 +13,7 @@ AppMetadata get_app_data(size_t app_id)
 {
     AppMetadata metadata;
     size_t num_app = get_num_app();
+
     assert(app_id <= num_app);
 
     metadata.start = _num_app[app_id];
@@ -21,14 +22,18 @@ AppMetadata get_app_data(size_t app_id)
     return metadata;
 }
 
-AppMetadata get_app_data_by_name(const char* path)
+AppMetadata get_app_data_by_name(const char *path)
 {
-    AppMetadata metadata;
+    AppMetadata metadata = { 0 };
+
     metadata.id = -1;
+
+    if (path == 0)
+        return metadata;
 
     int app_num = get_num_app();
     for (size_t i = 0; i < app_num; i++) {
-        if (strcmp(path, app_names[i]) == 0) {
+        if (app_names[i] != 0 && strcmp(path, app_names[i]) == 0) {
             metadata = get_app_data(i + 1);
             printk("find app:%s id:%d\n", path, metadata.id);
             return metadata;
@@ -41,6 +46,7 @@ AppMetadata get_app_data_by_name(const char* path)
 void get_app_names()
 {
     int app_num = get_num_app();
+
     printk("/**** APPS ****\n");
     printk("num app:%d\n", app_num);
     for (size_t i = 0; i < app_num; i++) {
@@ -48,7 +54,7 @@ void get_app_names()
             app_names[0] = _app_names;
         } else {
             size_t len = strlen(app_names[i - 1]);
-            app_names[i] = (char*)((u64)app_names[i - 1] + len + 1);
+            app_names[i] = (char *)((u64)app_names[i - 1] + len + 1);
         }
         printk("%s\n", app_names[i]);
     }
@@ -57,9 +63,9 @@ void get_app_names()
 
 u8 flags_to_mmap_prot(u8 flags)
 {
-    return (flags & PF_R ? PTE_R : 0) |
-           (flags & PF_W ? PTE_W : 0) |
-           (flags & PF_X ? PTE_X : 0);
+    return ((flags & PF_R) ? PTE_R : 0) |
+           ((flags & PF_W) ? PTE_W : 0) |
+           ((flags & PF_X) ? PTE_X : 0);
 }
 
 void elf_check(elf64_ehdr_t *ehdr)
@@ -70,7 +76,7 @@ void elf_check(elf64_ehdr_t *ehdr)
     }
 }
 
-void load_segment(elf64_ehdr_t *ehdr, struct TaskControlBlock* proc)
+void load_segment(elf64_ehdr_t *ehdr, struct TaskControlBlock *proc)
 {
     elf64_phdr_t *phdr;
     u64 max_end = 0;
@@ -102,7 +108,7 @@ void load_segment(elf64_ehdr_t *ehdr, struct TaskControlBlock* proc)
                 if (copy_len > PAGE_SIZE) {
                     copy_len = PAGE_SIZE;
                 }
-                memcpy((void*)paddr, (void*)((u64)ehdr + phdr->p_offset + j), copy_len);
+                memcpy((void *)paddr, (void *)((u64)ehdr + phdr->p_offset + j), copy_len);
             }
 
             PageTable_map(&proc->pagetable, virt_addr_from_size_t(start_va + j),
@@ -117,10 +123,11 @@ void load_segment(elf64_ehdr_t *ehdr, struct TaskControlBlock* proc)
 void load_app(size_t app_id)
 {
     AppMetadata metadata = get_app_data(app_id + 1);
-    elf64_ehdr_t *ehdr = (elf64_ehdr_t*)metadata.start;
+    elf64_ehdr_t *ehdr = (elf64_ehdr_t *)metadata.start;
+
     elf_check(ehdr);
 
-    TaskControlBlock* proc = task_create_pt(app_id);
+    TaskControlBlock *proc = task_create_pt(app_id);
     load_segment(ehdr, proc);
     proc->entry = (u64)ehdr->e_entry;
     proc_ustack(proc);

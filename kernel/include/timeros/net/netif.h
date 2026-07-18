@@ -32,8 +32,7 @@ typedef struct _link_layer_t {
     net_err_t (*open)(struct _netif_t *netif);
     void (*close)(struct _netif_t *netif);
     net_err_t (*in)(struct _netif_t *netif, pktbuf_t *buf);
-    net_err_t (*out)(struct _netif_t *netif, ipaddr_t *dest,
-                     pktbuf_t *buf);
+    net_err_t (*out)(struct _netif_t *netif, ipaddr_t *dest, pktbuf_t *buf);
 } link_layer_t;
 
 typedef enum {
@@ -63,7 +62,7 @@ typedef struct _netif_t {
 
 net_err_t netif_init(void);
 netif_t *netif_open(const char *dev_name, const netif_ops_t *ops,
-                   void *ops_data);
+                    void *ops_data);
 net_err_t netif_set_addr(netif_t *netif, const ipaddr_t *ip,
                          const ipaddr_t *netmask, const ipaddr_t *gateway);
 net_err_t netif_set_hwaddr(netif_t *netif, const uint8_t *hwaddr, int len);
@@ -74,6 +73,7 @@ netif_t *netif_get_default(void);
 net_err_t netif_close(netif_t *netif);
 net_err_t netif_register_layer(int type, const link_layer_t *layer);
 
+/* A successful queue insertion transfers buf ownership to the netif. */
 net_err_t netif_put_in(netif_t *netif, pktbuf_t *buf, int timeout);
 net_err_t netif_put_out(netif_t *netif, pktbuf_t *buf, int timeout);
 pktbuf_t *netif_get_in(netif_t *netif, int timeout);

@@ -103,9 +103,23 @@ static void test_ether(void)
     assert(ether_register_handler(0x0800, input_handler) == NET_ERR_OK);
     buf = pktbuf_alloc(ETH_FRAME_MIN);
     assert(buf != 0);
+    memcpy(tx_frame, mac, ETH_HWA_SIZE);
     assert(pktbuf_write(buf, tx_frame, tx_length) == NET_ERR_OK);
     assert(ether_in(netif, buf) == NET_ERR_OK);
     assert(input_calls == 1);
+
+    buf = pktbuf_alloc(ETH_FRAME_MIN);
+    assert(buf != 0);
+    tx_frame[0] ^= 1;
+    assert(pktbuf_write(buf, tx_frame, tx_length) == NET_ERR_OK);
+    assert(ether_in(netif, buf) == NET_ERR_UNREACH);
+    pktbuf_free(buf);
+    tx_frame[0] ^= 1;
+
+    buf = pktbuf_alloc(14);
+    assert(buf != 0);
+    assert(ether_in(netif, buf) == NET_ERR_SIZE);
+    pktbuf_free(buf);
 
     buf = pktbuf_alloc(13);
     assert(buf != 0);
