@@ -28,6 +28,6 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/net_stack.c" \
   -o "$tmp/test_m5_stack"
 ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
-  UBSAN_OPTIONS=halt_on_error=1 "$tmp/test_m5_stack"
+  UBSAN_OPTIONS=halt_on_error=1 timeout 15s "$tmp/test_m5_stack"
 
 echo 'PASS: M5 network stack initialization behavior'
