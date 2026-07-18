@@ -12,12 +12,11 @@ static arp_entry_t cache_entries[ARP_CACHE_SIZE];
 static mblock_t cache_blocks;
 static nlist_t cache_list;
 static const uint8_t empty_hwaddr[ETH_HWA_SIZE];
+static int initialized;
 
 static int arp_scan_count(int seconds)
 {
-    int count = seconds / ARP_TIMER_TMO;
-
-    return count > 0 ? count : 1;
+    return 1 + (seconds - 1) / ARP_TIMER_TMO;
 }
 
 static void arp_free_waiting(arp_entry_t *entry)
@@ -182,17 +181,25 @@ static net_err_t arp_packet_check(const arp_pkt_t *packet, int size)
 
 net_err_t arp_init(void)
 {
+    if (initialized)
+        return NET_ERR_EXIST;
     nlist_init(&cache_list);
     net_err_t err = mblock_init(&cache_blocks, cache_entries,
                                 sizeof(cache_entries[0]), ARP_CACHE_SIZE,
                                 NLOCKER_NONE);
     if (err < 0)
         return err;
-    err = ether_register_handler(NET_PROTOCOL_ARP, arp_in);
+    err = net_timer_add(&cache_timer, "arp timer", arp_cache_tmo, 0,
+                        ARP_TIMER_TMO * 1000, NET_TIMER_RELOAD);
     if (err < 0)
         return err;
-    return net_timer_add(&cache_timer, "arp timer", arp_cache_tmo, 0,
-                         ARP_TIMER_TMO * 1000, NET_TIMER_RELOAD);
+    err = ether_register_handler(NET_PROTOCOL_ARP, arp_in);
+    if (err < 0) {
+        net_timer_remove(&cache_timer);
+        return err;
+    }
+    initialized = 1;
+    return NET_ERR_OK;
 }
 
 net_err_t arp_make_request(netif_t *netif, const ipaddr_t *protocol_addr)
