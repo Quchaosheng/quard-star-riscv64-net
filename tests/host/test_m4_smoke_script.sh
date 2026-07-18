@@ -26,11 +26,20 @@ while [ "$#" -gt 0 ]; do
     *) shift ;;
   esac
 done
-[ -n "$ready" ] && : > "$ready"
-[ -n "$stats" ] && printf 'frames=32\n' > "$stats"
+[ -n "$ready" ] && printf 'ready\n' > "$ready"
+[ -n "$stats" ] && printf '{"frames":%s,"elapsed_seconds":0.1}\n' \
+  "${QS_FAKE_PEER_FRAMES:-32}" > "$stats"
 exit "${QS_FAKE_PEER_EXIT:-0}"
 EOF
 chmod +x "$tmp/fake-peer"
+
+cat > "$tmp/fake-sudo" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+printf 'sudo %s\n' "$*" >>"$QS_SUDO_LOG"
+exec "$@"
+EOF
+chmod +x "$tmp/fake-sudo"
 
 cat > "$tmp/fake-qemu" <<'EOF'
 #!/usr/bin/env bash
@@ -84,12 +93,27 @@ chmod +x "$tmp/fake-qemu"
 run_m4() {
   QS_ROOT="$tmp" QS_QEMU="$tmp/fake-qemu" \
   QS_QEMU_ARGS="$tmp/qemu.args" QS_M4_PEER="$tmp/fake-peer" \
+  QS_SUDO="$tmp/fake-sudo" QS_SUDO_LOG="$tmp/sudo.log" \
   QS_TAP_MANAGED=0 QS_TAP_IFACE=tap-test QS_SMOKE_TIMEOUT=2 \
     "$root/scripts/m4-smoke.sh"
 }
 
 run_m4 >"$tmp/good.out" 2>"$tmp/good.err" || \
   fail "complete M4 markers, peer, and guest exit zero should pass"
+grep -Fxq -- '-global' "$tmp/qemu.args" || fail "missing QEMU global option"
+grep -Fxq 'virtio-mmio.force-legacy=true' "$tmp/qemu.args" || \
+  fail "VirtIO net must use the legacy transport"
+grep -Fxq -- '-netdev' "$tmp/qemu.args" || fail "missing QEMU netdev option"
+grep -Fxq 'tap,id=net0,ifname=tap-test,script=no,downscript=no' \
+  "$tmp/qemu.args" || fail "QEMU must bind net0 to tap-test"
+grep -Fxq -- '-device' "$tmp/qemu.args" || fail "missing QEMU device option"
+grep -Fxq 'virtio-net-device,netdev=net0,mac=52:54:00:12:34:56,bus=virtio-mmio-bus.1' \
+  "$tmp/qemu.args" || fail "VirtIO net must use MMIO bus 1 and the fixed MAC"
+
+QS_FORCE_PEER_SUDO=1 run_m4 >"$tmp/sudo.out" 2>"$tmp/sudo.err" || \
+  fail "sudo raw peer fallback should pass"
+grep -Fq "sudo $tmp/fake-peer tap-test" "$tmp/sudo.log" || \
+  fail "raw peer fallback must use the configured sudo command"
 
 if QS_FAKE_MODE=missing-rx run_m4 >"$tmp/missing.out" 2>"$tmp/missing.err"; then
   fail "missing M4 marker must fail"
@@ -114,6 +138,10 @@ grep -qi 'exit' "$tmp/exit.err" || \
 
 if QS_FAKE_PEER_EXIT=9 run_m4 >"$tmp/peer.out" 2>"$tmp/peer.err"; then
   fail "nonzero TAP peer exit must fail"
+fi
+
+if QS_FAKE_PEER_FRAMES=31 run_m4 >"$tmp/frames.out" 2>"$tmp/frames.err"; then
+  fail "peer frame count mismatch must fail"
 fi
 
 echo "PASS: M4 smoke script behavior"

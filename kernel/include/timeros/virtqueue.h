@@ -48,6 +48,7 @@ int virtq_init(struct virtqueue *q, void *pages, u16 num);
 int virtq_alloc_chain(struct virtqueue *q, int count, int *indices);
 int virtq_free_chain(struct virtqueue *q, u16 head);
 void virtq_submit(struct virtqueue *q, u16 head);
+int virtq_pop_used_len(struct virtqueue *q, u16 *head, u32 *length);
 int virtq_pop_used(struct virtqueue *q, u16 *head);
 int virtq_free_count(const struct virtqueue *q);
 

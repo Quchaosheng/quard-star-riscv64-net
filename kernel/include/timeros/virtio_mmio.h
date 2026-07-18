@@ -42,6 +42,6 @@ void virtio_mmio_notify(struct virtio_mmio *dev, u16 queue);
 u32 virtio_mmio_ack_interrupt(struct virtio_mmio *dev);
 u64 virtio_mmio_config64(struct virtio_mmio *dev, u32 offset);
 u8 virtio_mmio_config8(struct virtio_mmio *dev, u32 offset);
-void virtio_mmio_reset(struct virtio_mmio *dev);
+int virtio_mmio_reset(struct virtio_mmio *dev);
 
 #endif
