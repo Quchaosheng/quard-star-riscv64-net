@@ -219,16 +219,26 @@ pktbuf_t *netif_get_out(netif_t *netif, int timeout)
 
 net_err_t netif_out(netif_t *netif, ipaddr_t *dest, pktbuf_t *buf)
 {
-    if (netif == 0 || buf == 0)
+    if (buf == 0)
         return NET_ERR_PARAM;
-    if (netif->state != NETIF_ACTIVE)
+    if (netif == 0) {
+        pktbuf_free(buf);
+        return NET_ERR_PARAM;
+    }
+    if (netif->state != NETIF_ACTIVE) {
+        pktbuf_free(buf);
         return NET_ERR_STATE;
+    }
     if (netif->link_layer != 0 && netif->link_layer->out != 0)
         return netif->link_layer->out(netif, dest, buf);
-    if (netif->ops == 0 || netif->ops->xmit == 0)
+    if (netif->ops == 0 || netif->ops->xmit == 0) {
+        pktbuf_free(buf);
         return NET_ERR_NOT_SUPPORT;
+    }
     net_err_t err = netif_put_out(netif, buf, -1);
-    if (err < 0)
+    if (err < 0) {
+        pktbuf_free(buf);
         return err;
+    }
     return netif->ops->xmit(netif);
 }

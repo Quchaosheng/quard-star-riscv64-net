@@ -78,6 +78,7 @@ net_err_t netif_put_in(netif_t *netif, pktbuf_t *buf, int timeout);
 net_err_t netif_put_out(netif_t *netif, pktbuf_t *buf, int timeout);
 pktbuf_t *netif_get_in(netif_t *netif, int timeout);
 pktbuf_t *netif_get_out(netif_t *netif, int timeout);
+/* Output consumes buf on every return after a non-null buf is supplied. */
 net_err_t netif_out(netif_t *netif, ipaddr_t *dest, pktbuf_t *buf);
 
 #endif
