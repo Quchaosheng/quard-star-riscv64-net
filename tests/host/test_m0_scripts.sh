@@ -10,6 +10,11 @@ fail() {
   exit 1
 }
 
+git -C "$root" grep -Il '^#!' -- scripts tests/host | while IFS= read -r path; do
+  mode=$(git -C "$root" ls-files -s -- "$path" | awk '{print $1}')
+  [ "$mode" = 100755 ] || fail "$path must be executable in Git"
+done
+
 mkdir -p "$tmp/bin"
 cat > "$tmp/os-release" <<'EOF'
 ID=ubuntu
@@ -31,6 +36,22 @@ if PATH="$tmp/bin" QS_OS_RELEASE="$tmp/os-release" /bin/bash "$root/scripts/chec
 fi
 grep -q 'missing: qemu-system-riscv64' "$tmp/qemu.err" || fail "missing-QEMU error should name the command"
 mv "$tmp/qemu-system-riscv64" "$tmp/bin/qemu-system-riscv64"
+
+cat > "$tmp/bin/gcc" <<'EOF'
+#!/bin/sh
+case " $* " in
+  *' -lfdt '*) exit 1 ;;
+  *) exit 0 ;;
+esac
+EOF
+chmod +x "$tmp/bin/gcc"
+if PATH="$tmp/bin:$PATH" QS_OS_RELEASE="$tmp/os-release" \
+  "$root/scripts/check-env.sh" >/dev/null 2>"$tmp/libfdt.err"; then
+  fail "missing libfdt development files should fail"
+fi
+grep -q 'missing: libfdt' "$tmp/libfdt.err" || \
+  fail "missing-libfdt error should name the dependency"
+printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/gcc"
 
 sed 's/26.04/22.04/' "$tmp/os-release" > "$tmp/os-release-old"
 if PATH="$tmp/bin:$PATH" QS_OS_RELEASE="$tmp/os-release-old" "$root/scripts/check-env.sh" 2>"$tmp/old.err"; then
