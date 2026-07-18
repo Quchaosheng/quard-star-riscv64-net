@@ -202,6 +202,20 @@ int virtio_net_init(void)
     return 0;
 }
 
+int virtio_net_get_mac(u8 *mac)
+{
+    if (mac == 0)
+        return -1;
+    spin_lock(&net.lock);
+    if (!net.active || net.failed) {
+        spin_unlock(&net.lock);
+        return -1;
+    }
+    memcpy(mac, net.mac, sizeof(net.mac));
+    spin_unlock(&net.lock);
+    return 0;
+}
+
 int virtio_net_reset(void)
 {
     spin_lock(&net.lock);

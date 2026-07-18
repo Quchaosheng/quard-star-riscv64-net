@@ -12,6 +12,7 @@ typedef enum {
     NET_ERR_PARAM = -7,
     NET_ERR_EXIST = -8,
     NET_ERR_STATE = -9,
+    NET_ERR_IO = -10,
     NET_ERR_NOT_SUPPORT = -11,
 } net_err_t;
 
