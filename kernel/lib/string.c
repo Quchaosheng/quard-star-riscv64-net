@@ -72,6 +72,15 @@ void *memchr(const void *ptr, int ch, size_t count)
     return 0;
 }
 
+char *strchr(const char *str, int ch)
+{
+    do {
+        if (*str == (char)ch)
+            return (char *)str;
+    } while (*str++ != EOS);
+    return 0;
+}
+
 char *strrchr(const char *str, int ch)
 {
     const char *last = 0;

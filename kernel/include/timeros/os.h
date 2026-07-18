@@ -14,6 +14,7 @@
 #include <timeros/riscv.h>
 #include <timeros/sbi.h>
 #include <timeros/selftest.h>
+#include <timeros/fatfs_test.h>
 #include <timeros/spinlock.h>
 #include <timeros/wait.h>
 #include <timeros/stdio.h>

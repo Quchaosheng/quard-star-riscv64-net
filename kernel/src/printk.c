@@ -9,6 +9,15 @@ void uart_puts(char *s)
 
 static char out_buf[1000]; // buffer for _vprintf()
 static struct spinlock print_lock;
+
+void console_write(const char *data, size_t len)
+{
+	spin_lock(&print_lock);
+	for (size_t i = 0; i < len; i++)
+		sbi_console_putchar(data[i]);
+	spin_unlock(&print_lock);
+}
+
 static int _vprintf(const char* s, va_list vl)
 {
 	int res = _vsnprintf(NULL, -1, s, vl);

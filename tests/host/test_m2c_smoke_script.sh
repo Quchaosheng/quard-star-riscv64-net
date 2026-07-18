@@ -51,6 +51,9 @@ if [ "${QS_FAKE_STRESS:-0}" -eq 1 ]; then
   printf 'QS:STRESS_ELAPSED_TICKS:1200000001\r\n' >> "$kernel_log"
   printf 'QS:TEST_PASS:m2c-stress\r\n' >> "$kernel_log"
 else
+  if [ "${QS_FAKE_BAD_ITERATION:-0}" -eq 1 ]; then
+    printf 'QS:FATFS_ITERATIONS:1280\n' >> "$kernel_log"
+  fi
   printf 'QS:TEST_PASS:m2c-smoke\n' >> "$kernel_log"
 fi
 
@@ -67,6 +70,13 @@ fi
 
 paste -sd ' ' "$tmp/qemu.args" | grep -Fq -- '-smp 2' || \
   fail "M2C smoke must start two harts"
+
+if QS_ROOT="$tmp" QS_QEMU="$tmp/fake-qemu" QS_QEMU_ARGS="$tmp/qemu.args" \
+QS_FAKE_BAD_ITERATION=1 QS_EXTRA_MARKERS='QS:FATFS_ITERATIONS:128' \
+QS_SMOKE_TIMEOUT=2 "$root/scripts/m2c-smoke.sh" \
+  >"$tmp/iteration.out" 2>"$tmp/iteration.err"; then
+  fail "extra markers must match a complete line"
+fi
 
 if QS_ROOT="$tmp" QS_QEMU="$tmp/fake-qemu" QS_QEMU_ARGS="$tmp/qemu.args" \
 QS_FAKE_EXIT=7 QS_SMOKE_TIMEOUT=2 \
