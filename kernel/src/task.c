@@ -37,6 +37,15 @@ static void task_first_run(void)
                 asm volatile("wfi");
         }
 #endif
+#ifdef QS_M4_TEST
+        int net_result = virtio_net_raw_test();
+        if (net_result != 0) {
+            printk("QS:TEST_FAIL:m4-net-raw:%d\n", net_result);
+            *(volatile u32 *)(uintptr_t)QEMU_TEST_BASE = QEMU_TEST_FAIL;
+            for (;;)
+                asm volatile("wfi");
+        }
+#endif
     }
     trap_return();
 }

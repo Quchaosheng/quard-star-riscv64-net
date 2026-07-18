@@ -99,6 +99,10 @@ void os_main(const void *fdt)
    binit();
    //初始化磁盘
    virtio_disk_init();
+#ifdef QS_M4_TEST
+   if (virtio_net_init() < 0)
+      panic("virtio net init");
+#endif
    //初始化进程
    procinit();
    //加载initproc进程

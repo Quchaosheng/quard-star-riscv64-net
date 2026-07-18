@@ -37,6 +37,8 @@ SRCS_C = \
 	loader.c \
 	virtqueue.c \
 	virtio_mmio.c \
+	virtio_net_completion.c \
+	virtio_net.c \
 	virtio_disk.c \
 	bio.c \
 

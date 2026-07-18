@@ -12,5 +12,11 @@ void m3_mark_virtqueue(void);
 void m3_mark_block_irq(void);
 void m3_mark_block_stress(void);
 void m3_mark_fatfs(void);
+void m4_mark_net_link(void);
+void m4_mark_net_irq(void);
+void m4_mark_net_tx(void);
+void m4_mark_net_rx(void);
+void m4_mark_net_reset(void);
+void m4_mark_net_stress(void);
 
 #endif

@@ -6,7 +6,8 @@ static volatile u32 *mmio_reg(struct virtio_mmio *dev, u32 offset)
 }
 
 int virtio_mmio_init(struct virtio_mmio *dev, u64 base, u32 device_id,
-                     u32 rejected_features)
+                     u32 rejected_features, u32 required_features,
+                     u32 *negotiated_features)
 {
     if (dev == 0)
         return -1;
@@ -27,6 +28,8 @@ int virtio_mmio_init(struct virtio_mmio *dev, u64 base, u32 device_id,
     *mmio_reg(dev, VIRTIO_MMIO_STATUS) = status;
 
     u32 features = *mmio_reg(dev, VIRTIO_MMIO_DEVICE_FEATURES);
+    if ((features & required_features) != required_features)
+        return -1;
     features &= ~rejected_features;
     *mmio_reg(dev, VIRTIO_MMIO_DRIVER_FEATURES) = features;
 
@@ -35,6 +38,8 @@ int virtio_mmio_init(struct virtio_mmio *dev, u64 base, u32 device_id,
     if ((*mmio_reg(dev, VIRTIO_MMIO_STATUS) &
          VIRTIO_CONFIG_S_FEATURES_OK) == 0)
         return -1;
+    if (negotiated_features != 0)
+        *negotiated_features = features;
     return 0;
 }
 
@@ -82,4 +87,17 @@ u64 virtio_mmio_config64(struct virtio_mmio *dev, u32 offset)
     u64 low = *mmio_reg(dev, VIRTIO_MMIO_CONFIG + offset);
     u64 high = *mmio_reg(dev, VIRTIO_MMIO_CONFIG + offset + sizeof(u32));
     return low | (high << 32);
+}
+
+u8 virtio_mmio_config8(struct virtio_mmio *dev, u32 offset)
+{
+    volatile u8 *config = (volatile u8 *)(uintptr_t)
+                          (dev->base + VIRTIO_MMIO_CONFIG + offset);
+    return *config;
+}
+
+void virtio_mmio_reset(struct virtio_mmio *dev)
+{
+    *mmio_reg(dev, VIRTIO_MMIO_STATUS) = 0;
+    __sync_synchronize();
 }
