@@ -1,5 +1,9 @@
 #include <timeros/os.h>
 
+#ifdef QS_M5_TEST
+#include <timeros/net/net_stack.h>
+#endif
+
 #ifndef QS_MIGRATION_TARGET
 #define QS_MIGRATION_TARGET 100
 #endif
@@ -53,6 +57,10 @@ static void task_first_run(void)
             for (;;)
                 asm volatile("wfi");
         }
+#endif
+#ifdef QS_M5_TEST
+        if (task_create_kernel(net_stack_worker, net_stack_default()) < 0)
+            panic("network worker task");
 #endif
     }
     trap_return();

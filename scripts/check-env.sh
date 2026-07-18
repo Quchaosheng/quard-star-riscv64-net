@@ -28,4 +28,11 @@ for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 ninja me
     missing=1
   fi
 done
+
+if command -v gcc >/dev/null 2>&1 && ! printf '%s\n' \
+  '#include <libfdt.h>' 'int main(void) { return fdt_check_header(0); }' | \
+  gcc -x c - -lfdt -o /dev/null >/dev/null 2>&1; then
+  echo "missing: libfdt development files" >&2
+  missing=1
+fi
 exit "$missing"

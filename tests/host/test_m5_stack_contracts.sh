@@ -25,10 +25,24 @@ require_text kernel/include/timeros/net/net_stack.h 'net_stack_worker' \
   'M5 needs a network worker entry'
 require_text kernel/src/main.c 'net_stack_init()' \
   'boot must initialize the M5 stack'
-require_text kernel/src/main.c 'task_create_kernel(net_stack_worker' \
-  'boot must schedule the M5 network worker'
+require_text kernel/src/task.c 'task_create_kernel(net_stack_worker' \
+  'the init task must schedule the M5 network worker'
 require_text kernel/src/trap.c 'QS_M5_TEST' \
   'M5 must dispatch VirtIO-net interrupts'
+
+if grep -Fq 'task_create_kernel(net_stack_worker' "$root/kernel/src/main.c"; then
+  echo 'FAIL: the M5 worker must not race the M4 raw RX consumer' >&2
+  status=1
+fi
+raw_line=$(grep -nF 'virtio_net_raw_test()' "$root/kernel/src/task.c" | \
+  head -1 | cut -d: -f1 || true)
+worker_line=$(grep -nF 'task_create_kernel(net_stack_worker' \
+  "$root/kernel/src/task.c" | head -1 | cut -d: -f1 || true)
+if [ -n "$raw_line" ] && [ -n "$worker_line" ] && \
+  [ "$worker_line" -le "$raw_line" ]; then
+  echo 'FAIL: the M5 worker must start after the M4 raw test' >&2
+  status=1
+fi
 
 if [ "$status" -ne 0 ]; then
   exit "$status"
