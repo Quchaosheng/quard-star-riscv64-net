@@ -1,14 +1,27 @@
 #include <timeros/os.h>
 
-#define SMP_SCHED_MIGRATIONS 100
+#ifndef QS_MIGRATION_TARGET
+#define QS_MIGRATION_TARGET 100
+#endif
+#define SMP_SCHED_MIGRATIONS QS_MIGRATION_TARGET
 
 static struct spinlock task_lock;
 static int task_count;
 static int nextpid;
 static u64 migration_count;
 static int migration_reported;
+static int wait_reported;
+static u32 sem_timeout_reported;
 
 struct TaskControlBlock tasks[MAX_TASKS];
+
+static void task_reset_wait(struct TaskControlBlock *p)
+{
+    p->wait_channel = 0;
+    p->wait_deadline = WAIT_FOREVER;
+    p->wait_result = 0;
+    sem_init(&p->child_exit, 0);
+}
 
 static void task_first_run(void)
 {
@@ -46,10 +59,13 @@ void procinit(void)
     nextpid = 0;
     migration_count = 0;
     migration_reported = 0;
+    wait_reported = 0;
+    sem_timeout_reported = 0;
 
     for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
         p->task_state = UnInit;
         p->last_hart = -1;
+        task_reset_wait(p);
     }
 }
 
@@ -119,6 +135,7 @@ TaskControlBlock *task_create_pt(size_t app_id)
     }
     p->task_state = Creating;
     p->last_hart = -1;
+    task_reset_wait(p);
     spin_unlock(&task_lock);
 
     proc_trap(p);
@@ -202,6 +219,48 @@ static struct TaskControlBlock *pick_runnable(struct cpu *cpu)
     return fallback;
 }
 
+static int task_wake_locked(void *channel, int wake_all)
+{
+    int woken = 0;
+
+    for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
+        if (p->task_state != Sleeping || p->wait_channel != channel)
+            continue;
+        p->wait_result = 0;
+        p->task_state = Ready;
+        woken++;
+        if (!wake_all)
+            break;
+    }
+
+    if (woken != 0) {
+        u64 mask = 0;
+        struct cpu *self = cpu_this();
+        for (int i = 0; i < MAX_CPUS; i++) {
+            if (&cpus[i] != self && cpus[i].present && cpus[i].online &&
+                cpus[i].idle)
+                mask |= 1ULL << cpus[i].hartid;
+        }
+        if (mask != 0) {
+            struct sbiret ret = sbi_send_ipi(mask, 0);
+            if (ret.error != 0)
+                panic("task_wake: SBI IPI failed");
+        }
+    }
+    return woken;
+}
+
+static void task_wake_expired_locked(u64 now)
+{
+    for (struct TaskControlBlock *p = tasks; p < &tasks[MAX_TASKS]; p++) {
+        if (p->task_state == Sleeping && p->wait_deadline != WAIT_FOREVER &&
+            p->wait_deadline <= now) {
+            p->wait_result = -1;
+            p->task_state = Ready;
+        }
+    }
+}
+
 static void record_migration(struct TaskControlBlock *p, struct cpu *cpu)
 {
     if (p->last_hart >= 0 && (u64)p->last_hart != cpu->hartid) {
@@ -209,7 +268,9 @@ static void record_migration(struct TaskControlBlock *p, struct cpu *cpu)
         if (!migration_reported && migration_count >= SMP_SCHED_MIGRATIONS) {
             migration_reported = 1;
             printk("QS:SMP_SCHED_OK\n");
+            printk("QS:STRESS_MIGRATIONS:%d\n", (int)migration_count);
             printk("QS:TEST_PASS:m2b-smoke\n");
+            m2c_mark_sched();
         }
     }
     p->last_hart = (int)cpu->hartid;
@@ -222,8 +283,10 @@ void scheduler(void)
 
     for (;;) {
         intr_on();
+        m2c_selftest_poll();
         spin_lock(&task_lock);
         cpu->idle = 0;
+        task_wake_expired_locked(r_mtime());
 
         struct TaskControlBlock *p = pick_runnable(cpu);
         if (p == 0) {
@@ -259,6 +322,40 @@ void schedule(void)
     spin_unlock(&task_lock);
 }
 
+int task_sleep(void *channel, struct spinlock *caller_lock, u64 deadline)
+{
+    struct cpu *cpu = cpu_this();
+    struct TaskControlBlock *p = current_proc();
+
+    spin_lock(&task_lock);
+    spin_unlock(caller_lock);
+    if (p->task_state != Running) {
+        spin_unlock(&task_lock);
+        panic("task_sleep: process is not running");
+    }
+
+    p->wait_channel = channel;
+    p->wait_deadline = deadline;
+    p->wait_result = 0;
+    p->task_state = Sleeping;
+    __switch(&p->task_context, &cpu->scheduler_context);
+
+    int result = p->wait_result;
+    p->wait_channel = 0;
+    p->wait_deadline = WAIT_FOREVER;
+    spin_unlock(&task_lock);
+    spin_lock(caller_lock);
+    return result;
+}
+
+int task_wake(void *channel, int wake_all)
+{
+    spin_lock(&task_lock);
+    int woken = task_wake_locked(channel, wake_all);
+    spin_unlock(&task_lock);
+    return woken;
+}
+
 void run_first_task(void)
 {
     scheduler();
@@ -276,6 +373,7 @@ struct TaskControlBlock *allocproc(void)
             p->task_state = Creating;
             p->pid = allocpid_locked();
             p->last_hart = -1;
+            task_reset_wait(p);
             break;
         }
     }
@@ -354,6 +452,9 @@ static void freeproc_locked(struct TaskControlBlock *p)
     p->entry = 0;
     p->exit_code = 0;
     p->last_hart = -1;
+    p->wait_channel = 0;
+    p->wait_deadline = WAIT_FOREVER;
+    p->wait_result = 0;
     p->task_state = UnInit;
 }
 
@@ -373,6 +474,23 @@ static void children_proc_clear_locked(struct TaskControlBlock *p)
     }
 }
 
+static struct semaphore *lock_parent_exit(struct TaskControlBlock *p)
+{
+    for (;;) {
+        spin_lock(&task_lock);
+        struct TaskControlBlock *parent = p->parent;
+        spin_unlock(&task_lock);
+
+        struct semaphore *parent_exit = &parent->child_exit;
+        spin_lock(&parent_exit->lock);
+        spin_lock(&task_lock);
+        if (p->parent == parent)
+            return parent_exit;
+        spin_unlock(&task_lock);
+        spin_unlock(&parent_exit->lock);
+    }
+}
+
 void exit_current_and_run_next(u64 exit_code)
 {
     struct cpu *cpu = cpu_this();
@@ -380,11 +498,15 @@ void exit_current_and_run_next(u64 exit_code)
     if (p->pid == 0)
         panic("init exiting");
 
-    spin_lock(&task_lock);
+    struct semaphore *parent_exit = lock_parent_exit(p);
     p->exit_code = exit_code;
     p->task_state = Zombie;
     children_proc_clear_locked(p);
     task_count--;
+    parent_exit->count++;
+    if (parent_exit->wait.waiters != 0)
+        task_wake_locked(&parent_exit->wait, 0);
+    spin_unlock(&parent_exit->lock);
     __switch(&p->task_context, &cpu->scheduler_context);
     panic("zombie exit");
 }
@@ -405,6 +527,13 @@ int wait(void)
                 int pid = child->pid;
                 freeproc_locked(child);
                 spin_unlock(&task_lock);
+#ifdef QS_M2C_TEST
+                if (!__atomic_exchange_n(&wait_reported, 1,
+                                         __ATOMIC_ACQ_REL)) {
+                    printk("QS:WAIT_OK\n");
+                    m2c_mark_wait();
+                }
+#endif
                 return pid;
             }
         }
@@ -412,6 +541,13 @@ int wait(void)
 
         if (!havekids)
             return -1;
-        schedule();
+#ifdef QS_M2C_TEST
+        if (sem_timedwait(&p->child_exit, r_mtime() + 100000ULL) < 0 &&
+            !__atomic_exchange_n(&sem_timeout_reported, 1,
+                                 __ATOMIC_ACQ_REL))
+            printk("QS:SEM_TIMEOUT_OK\n");
+#else
+        sem_wait(&p->child_exit);
+#endif
     }
 }

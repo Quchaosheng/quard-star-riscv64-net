@@ -37,6 +37,14 @@ enum sbi_ext_hsm_fid {
 	SBI_EXT_HSM_HART_GET_STATUS = 2,
 };
 
+enum sbi_ext_ipi_fid {
+	SBI_EXT_IPI_SEND_IPI = 0,
+};
+
+enum sbi_ext_rfence_fid {
+	SBI_EXT_RFENCE_REMOTE_SFENCE_VMA = 1,
+};
+
 struct sbiret sbi_ecall(int ext, int fid, unsigned long arg0,
 			unsigned long arg1, unsigned long arg2,
 			unsigned long arg3, unsigned long arg4,
@@ -45,6 +53,9 @@ void sbi_console_putchar(int ch);
 int sbi_console_getchar(void);
 struct sbiret sbi_hart_start(u64 hartid, u64 start_addr, u64 opaque);
 struct sbiret sbi_hart_get_status(u64 hartid);
+struct sbiret sbi_send_ipi(u64 hart_mask, u64 hart_mask_base);
+struct sbiret sbi_remote_sfence_vma(u64 hart_mask, u64 hart_mask_base,
+				    u64 start, u64 size);
 
 
 

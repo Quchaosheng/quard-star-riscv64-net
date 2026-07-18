@@ -1,5 +1,7 @@
 #include <timeros/os.h>
 
+static u32 rfence_reported;
+
 PhysAddr phys_addr_from_size_t(uint64_t v) {
     PhysAddr addr;
     addr.value = v & ((1ULL << PA_WIDTH_SV39) - 1);
@@ -432,9 +434,34 @@ void uvmfree(PageTable* pt , u64 sz)
     freewalk(pt->root_ppn);
 }
 
+void tlb_shootdown_all(void)
+{
+  u64 mask = 0;
+  struct cpu *self = cpu_this();
+
+  sfence_vma();
+  for (int i = 0; i < MAX_CPUS; i++) {
+    if (&cpus[i] != self && cpus[i].present && cpus[i].online)
+      mask |= 1ULL << cpus[i].hartid;
+  }
+
+  if (mask != 0) {
+    struct sbiret ret = sbi_remote_sfence_vma(mask, 0, 0, ~0ULL);
+    if (ret.error != 0)
+      panic("tlb_shootdown_all: SBI RFENCE failed");
+#ifdef QS_M2C_TEST
+    if (!__atomic_exchange_n(&rfence_reported, 1, __ATOMIC_ACQ_REL)) {
+      printk("QS:RFENCE_OK\n");
+      m2c_mark_rfence();
+    }
+#endif
+  }
+}
+
 
 void proc_freepagetable(PageTable* pagetable, u64 sz)
 {
+  tlb_shootdown_all();
   uvmunmap(pagetable, floor_virts(virt_addr_from_size_t(TRAMPOLINE)), 1, 0);
   uvmunmap(pagetable, floor_virts(virt_addr_from_size_t(TRAPFRAME)), 1, 0);
   uvmfree(pagetable, sz);
@@ -465,6 +492,9 @@ PageTable kvmmake(void)
     // map virtio MMIO region for runtime interrupt/data path.
     PageTable_map(&pt, virt_addr_from_size_t(VIRTIO0), phys_addr_from_size_t(VIRTIO0),
                     PAGE_SIZE, PTE_R | PTE_W );
+    PageTable_map(&pt, virt_addr_from_size_t(QEMU_TEST_BASE),
+                    phys_addr_from_size_t(QEMU_TEST_BASE), PAGE_SIZE,
+                    PTE_R | PTE_W);
 
     //allocate and map a kernel stack for each process.
     proc_mapstacks(&pt);
