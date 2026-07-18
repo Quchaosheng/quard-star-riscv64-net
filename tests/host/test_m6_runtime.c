@@ -262,6 +262,11 @@ static void test_mblock_none_never_waits(void)
 
     net_time_t start;
     sys_time_curr(&start);
+    assert(mblock_alloc(&blocks, 0) == 0);
+    assert(sys_time_goes(&start) < 100);
+    assert(mblock_free_cnt(&blocks) == 0);
+
+    sys_time_curr(&start);
     assert(mblock_alloc(&blocks, 200) == 0);
     assert(sys_time_goes(&start) < 100);
     mblock_free(&blocks, &storage[0]);
