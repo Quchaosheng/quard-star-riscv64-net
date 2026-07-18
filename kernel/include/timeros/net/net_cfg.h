@@ -12,7 +12,23 @@
 #define NETIF_INQ_SIZE 16
 #define NETIF_OUTQ_SIZE 16
 #define TIMER_NAME_SIZE 32
+#ifndef ARP_CACHE_SIZE
 #define ARP_CACHE_SIZE 8
+#endif
+#ifndef ARP_MAX_PKT_WAIT
 #define ARP_MAX_PKT_WAIT 8
+#endif
+#ifndef ARP_ENTRY_STABLE_TMO
+#define ARP_ENTRY_STABLE_TMO 1200
+#endif
+#ifndef ARP_ENTRY_PENDING_TMO
+#define ARP_ENTRY_PENDING_TMO 3
+#endif
+#ifndef ARP_ENTRY_RETRY_CNT
+#define ARP_ENTRY_RETRY_CNT 5
+#endif
+#ifndef ARP_TIMER_TMO
+#define ARP_TIMER_TMO 1
+#endif
 
 #endif

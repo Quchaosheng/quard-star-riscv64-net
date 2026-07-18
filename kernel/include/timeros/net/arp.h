@@ -35,6 +35,8 @@ typedef struct _arp_entry_t {
     ipaddr_t paddr;
     uint8_t haddr[ETH_HWA_SIZE];
     arp_state_t state;
+    int tmo;
+    int retry;
     netif_t *netif;
     nlist_t buf_list;
 } arp_entry_t;
