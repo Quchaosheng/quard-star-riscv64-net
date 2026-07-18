@@ -9,6 +9,11 @@ typedef struct {
     int clear_reload;
 } callback_state_t;
 
+typedef struct {
+    int calls;
+    int reload_ms;
+} self_readd_state_t;
+
 static int callback_order[16];
 static int callback_order_count;
 
@@ -20,6 +25,15 @@ static void record_callback(net_timer_t *timer, void *arg)
     callback_order[callback_order_count++] = state->id;
     if (state->clear_reload)
         timer->flags &= ~NET_TIMER_RELOAD;
+}
+
+static void self_readd_callback(net_timer_t *timer, void *arg)
+{
+    self_readd_state_t *state = arg;
+
+    state->calls++;
+    assert(net_timer_add(timer, "self-readd", self_readd_callback, state,
+                         state->reload_ms, NET_TIMER_RELOAD) == NET_ERR_OK);
 }
 
 static void reset_order(void)
@@ -152,6 +166,52 @@ static void test_arguments_and_bounded_name(void)
     assert(net_timer_first_tmo() == 0);
 }
 
+static void test_duplicate_active_add_preserves_schedule(void)
+{
+    net_timer_t timer;
+    callback_state_t state = { .id = 1 };
+
+    assert(net_timer_init() == NET_ERR_OK);
+    assert(net_timer_add(&timer, "original", record_callback, &state,
+                         10, 0) == NET_ERR_OK);
+    assert(net_timer_add(&timer, "replacement", record_callback, &state,
+                         1, NET_TIMER_RELOAD) == NET_ERR_EXIST);
+    assert(strcmp(timer.name, "original") == 0);
+    assert(timer.flags == 0);
+    assert(timer.curr == 10);
+    assert(timer.reload == 10);
+    assert(timer.proc == record_callback);
+    assert(timer.arg == &state);
+    assert(net_timer_first_tmo() == 10);
+
+    assert(net_timer_check_tmo(9) == NET_ERR_OK);
+    assert(state.calls == 0);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(state.calls == 1);
+    assert(net_timer_first_tmo() == 0);
+}
+
+static void test_callback_can_readd_itself_once(void)
+{
+    net_timer_t timer;
+    self_readd_state_t state = { .reload_ms = 7 };
+
+    assert(net_timer_init() == NET_ERR_OK);
+    assert(net_timer_add(&timer, "one-shot", self_readd_callback, &state,
+                         3, 0) == NET_ERR_OK);
+    assert(net_timer_check_tmo(3) == NET_ERR_OK);
+    assert(state.calls == 1);
+    assert(net_timer_first_tmo() == 7);
+
+    assert(net_timer_check_tmo(6) == NET_ERR_OK);
+    assert(state.calls == 1);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(state.calls == 2);
+    assert(net_timer_first_tmo() == 7);
+    net_timer_remove(&timer);
+    assert(net_timer_first_tmo() == 0);
+}
+
 int main(void)
 {
     test_reload_uses_next_check_baseline();
@@ -159,5 +219,7 @@ int main(void)
     test_remove_preserves_remaining_deadline();
     test_reload_can_be_disabled_by_callback();
     test_arguments_and_bounded_name();
+    test_duplicate_active_add_preserves_schedule();
+    test_callback_can_readd_itself_once();
     return 0;
 }
