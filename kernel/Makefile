@@ -46,6 +46,7 @@ NET_SRCS_C = \
 	net/net_sys.c \
 	net/nlocker.c \
 	net/nlist.c \
+	net/timer.c \
 	net/mblock.c \
 	net/fixq.c \
 	net/pktbuf.c \
