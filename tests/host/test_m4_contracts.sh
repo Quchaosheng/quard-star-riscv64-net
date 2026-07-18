@@ -122,6 +122,15 @@ require_text kernel/src/virtio_net.c \
   'net_validate_header_locked' \
   'RX must reject unsupported legacy net header metadata'
 require_text kernel/src/virtio_net.c \
+  'net_drop_rx_locked(slot)' \
+  'malformed RX frames must be dropped and reposted'
+require_text kernel/src/virtio_net.c \
+  'while (net.active && generation == net.stats.resets &&' \
+  'RX waits must abort across a reset generation'
+require_text kernel/src/virtio_net.c \
+  'while (net.active && generation == net.stats.resets && net.pending_tx != 0)' \
+  'TX waits must abort across a reset generation'
+require_text kernel/src/virtio_net.c \
   '(2 * resets_done + 1) * QS_NET_ITERATIONS' \
   'M4 resets must leave traffic on both sides of each reset'
 require_text kernel/src/virtio_mmio.c \
