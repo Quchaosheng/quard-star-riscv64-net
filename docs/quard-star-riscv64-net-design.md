@@ -924,7 +924,7 @@ sudo apt update
 sudo apt install -y \
   build-essential git make ninja-build cmake pkg-config \
   gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf \
-  gdb-multiarch device-tree-compiler \
+  gdb-multiarch device-tree-compiler libfdt-dev \
   python3 python3-venv \
   libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
   flex bison bc \
