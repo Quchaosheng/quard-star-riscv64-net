@@ -53,6 +53,7 @@ NET_SRCS_C = \
 	net/netif_virtio.c \
 	net/tools.c \
 	net/ether.c \
+	net/arp.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
