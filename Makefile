@@ -28,6 +28,7 @@ test-host:
 	./tests/host/test_m4_completion.sh
 	./tests/host/test_m4_tap_scripts.sh
 	./tests/host/test_m4_smoke_script.sh
+	./tests/host/test_m5_foundation.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
