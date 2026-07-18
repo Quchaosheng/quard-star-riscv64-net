@@ -42,14 +42,31 @@ for file in "$qemu" "$out/fw/fw.bin" "$out/disk/disk.img"; do
 done
 
 rm -f "$kernel_log" "$qemu_log" "$combined"
-"$qemu" \
+set -- \
   -M quard-star -m 1G -smp 2 -bios none \
   -drive if=pflash,bus=0,unit=0,format=raw,file="$out/fw/fw.bin" \
   -drive file="$out/disk/disk.img",if=none,format=raw,id=x0 \
   -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
   -display none -monitor none \
-  -serial file:"$kernel_log" \
-  2>"$qemu_log" &
+  -serial file:"$kernel_log"
+if [ -n "${QS_TAP_IFACE:-}" ]; then
+  set -- "$@" \
+    -global virtio-mmio.force-legacy=true \
+    -netdev "tap,id=net0,ifname=$QS_TAP_IFACE,script=no,downscript=no" \
+    -device 'virtio-net-device,netdev=net0,mac=52:54:00:12:34:56,bus=virtio-mmio-bus.1'
+fi
+
+pid=
+cleanup_qemu()
+{
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+trap cleanup_qemu EXIT INT TERM
+
+"$qemu" "$@" 2>"$qemu_log" &
 pid=$!
 
 i=0
