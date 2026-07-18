@@ -22,9 +22,18 @@ static net_err_t icmpv4_echo_reply(netif_t *netif, const ipaddr_t *src,
     return ipv4_out(netif, src, NET_PROTOCOL_ICMPV4, buf);
 }
 
+static icmpv4_stats_t icmpv4_stats;
+
 net_err_t icmpv4_init(void)
 {
+    plat_memset(&icmpv4_stats, 0, sizeof(icmpv4_stats));
     return ipv4_register_handler(NET_PROTOCOL_ICMPV4, icmpv4_in);
+}
+
+void icmpv4_get_stats(icmpv4_stats_t *stats)
+{
+    if (stats != 0)
+        *stats = icmpv4_stats;
 }
 
 net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
@@ -41,11 +50,22 @@ net_err_t icmpv4_in(netif_t *netif, const ipaddr_t *src,
     if (pktbuf_checksum16(buf, pktbuf_total(buf), 0, 1) != 0)
         return NET_ERR_CHKSUM;
     icmpv4_hdr_t *header = (icmpv4_hdr_t *)pktbuf_data(buf);
-    if (header->type != ICMPV4_ECHO_REQUEST ||
-        header->code != ICMPV4_ECHO_CODE) {
+    if (header->code != ICMPV4_ECHO_CODE) {
         pktbuf_free(buf);
         return NET_ERR_NOT_SUPPORT;
     }
+    if (header->type == ICMPV4_ECHO_REPLY) {
+        icmpv4_stats.echo_replies++;
+        icmpv4_stats.last_reply_identifier = x_ntohs(header->identifier);
+        icmpv4_stats.last_reply_sequence = x_ntohs(header->sequence);
+        pktbuf_free(buf);
+        return NET_ERR_OK;
+    }
+    if (header->type != ICMPV4_ECHO_REQUEST) {
+        pktbuf_free(buf);
+        return NET_ERR_NOT_SUPPORT;
+    }
+    icmpv4_stats.echo_requests++;
     net_err_t err = icmpv4_echo_reply(netif, src, buf);
     if (err < 0)
         pktbuf_free(buf);
