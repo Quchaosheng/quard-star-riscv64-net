@@ -18,6 +18,12 @@ static void sleep_ms(long milliseconds)
     assert(nanosleep(&delay, 0) == 0);
 }
 
+static void wait_at_barrier(pthread_barrier_t *barrier)
+{
+    int result = pthread_barrier_wait(barrier);
+    assert(result == 0 || result == PTHREAD_BARRIER_SERIAL_THREAD);
+}
+
 static void test_monotonic_time(void)
 {
     net_time_t start;
@@ -45,12 +51,14 @@ static void test_timed_wait(void)
 
 struct waiter_args {
     sys_sem_t sem;
+    pthread_barrier_t *ready;
     net_err_t result;
 };
 
 static void *wait_forever(void *arg)
 {
     struct waiter_args *args = arg;
+    wait_at_barrier(args->ready);
     args->result = sys_sem_wait(args->sem, 0);
     return 0;
 }
@@ -60,13 +68,20 @@ static void test_wait_and_notify(void)
     sys_sem_t sem = sys_sem_create(0);
     assert(sem != SYS_SEM_INVALID);
 
-    struct waiter_args args = { .sem = sem, .result = NET_ERR_SYS };
+    pthread_barrier_t ready;
+    assert(pthread_barrier_init(&ready, 0, 2) == 0);
+    struct waiter_args args = {
+        .sem = sem,
+        .ready = &ready,
+        .result = NET_ERR_SYS,
+    };
     pthread_t waiter;
     assert(pthread_create(&waiter, 0, wait_forever, &args) == 0);
-    sleep_ms(10);
+    wait_at_barrier(&ready);
     sys_sem_notify(sem);
     assert(pthread_join(waiter, 0) == 0);
     assert(args.result == NET_ERR_OK);
+    assert(pthread_barrier_destroy(&ready) == 0);
 
     sys_sem_notify(sem);
     assert(sys_sem_wait(sem, 20) == NET_ERR_OK);
@@ -141,17 +156,20 @@ static void test_fixq_timeout_and_ownership(void)
 struct send_waiter_args {
     fixq_t *queue;
     void *message;
+    pthread_barrier_t *ready;
+    int timeout;
     net_err_t result;
 };
 
-static void *send_forever(void *arg)
+static void *send_waiter(void *arg)
 {
     struct send_waiter_args *args = arg;
-    args->result = fixq_send(args->queue, args->message, 0);
+    wait_at_barrier(args->ready);
+    args->result = fixq_send(args->queue, args->message, args->timeout);
     return 0;
 }
 
-static void test_fixq_permanent_send_wait(void)
+static void check_fixq_send_wake(int timeout)
 {
     fixq_t queue;
     void *items[1];
@@ -160,67 +178,106 @@ static void test_fixq_permanent_send_wait(void)
     assert(fixq_init(&queue, items, 1, NLOCKER_THREAD) == NET_ERR_OK);
     assert(fixq_send(&queue, &first, -1) == NET_ERR_OK);
 
+    pthread_barrier_t ready;
+    assert(pthread_barrier_init(&ready, 0, 2) == 0);
     struct send_waiter_args args = {
         .queue = &queue,
         .message = &second,
+        .ready = &ready,
+        .timeout = timeout,
         .result = NET_ERR_SYS,
     };
     pthread_t waiter;
-    assert(pthread_create(&waiter, 0, send_forever, &args) == 0);
-    sleep_ms(10);
+    assert(pthread_create(&waiter, 0, send_waiter, &args) == 0);
+    wait_at_barrier(&ready);
     assert(fixq_count(&queue) == 1);
     assert(fixq_recv(&queue, -1) == &first);
     assert(pthread_join(waiter, 0) == 0);
     assert(args.result == NET_ERR_OK);
     assert(fixq_recv(&queue, -1) == &second);
     assert(fixq_recv(&queue, -1) == 0);
+    assert(pthread_barrier_destroy(&ready) == 0);
     fixq_destroy(&queue);
+}
+
+static void test_fixq_permanent_send_wait(void)
+{
+    check_fixq_send_wake(0);
+}
+
+static void test_fixq_timed_send_wake(void)
+{
+    check_fixq_send_wake(500);
 }
 
 struct recv_waiter_args {
     fixq_t *queue;
+    pthread_barrier_t *ready;
+    int timeout;
     void *result;
 };
 
-static void *recv_forever(void *arg)
+static void *recv_waiter(void *arg)
 {
     struct recv_waiter_args *args = arg;
-    args->result = fixq_recv(args->queue, 0);
+    wait_at_barrier(args->ready);
+    args->result = fixq_recv(args->queue, args->timeout);
     return 0;
 }
 
-static void test_fixq_permanent_recv_wait(void)
+static void check_fixq_recv_wake(int timeout)
 {
     fixq_t queue;
     void *items[1];
     int message;
     assert(fixq_init(&queue, items, 1, NLOCKER_THREAD) == NET_ERR_OK);
 
-    struct recv_waiter_args args = { .queue = &queue, .result = 0 };
+    pthread_barrier_t ready;
+    assert(pthread_barrier_init(&ready, 0, 2) == 0);
+    struct recv_waiter_args args = {
+        .queue = &queue,
+        .ready = &ready,
+        .timeout = timeout,
+        .result = 0,
+    };
     pthread_t waiter;
-    assert(pthread_create(&waiter, 0, recv_forever, &args) == 0);
-    sleep_ms(10);
+    assert(pthread_create(&waiter, 0, recv_waiter, &args) == 0);
+    wait_at_barrier(&ready);
     assert(fixq_count(&queue) == 0);
     assert(fixq_send(&queue, &message, -1) == NET_ERR_OK);
     assert(pthread_join(waiter, 0) == 0);
     assert(args.result == &message);
     assert(fixq_recv(&queue, -1) == 0);
+    assert(pthread_barrier_destroy(&ready) == 0);
     fixq_destroy(&queue);
+}
+
+static void test_fixq_permanent_recv_wait(void)
+{
+    check_fixq_recv_wake(0);
+}
+
+static void test_fixq_timed_recv_wake(void)
+{
+    check_fixq_recv_wake(500);
 }
 
 struct alloc_waiter_args {
     mblock_t *blocks;
+    pthread_barrier_t *ready;
+    int timeout;
     void *result;
 };
 
-static void *alloc_forever(void *arg)
+static void *alloc_waiter(void *arg)
 {
     struct alloc_waiter_args *args = arg;
-    args->result = mblock_alloc(args->blocks, 0);
+    wait_at_barrier(args->ready);
+    args->result = mblock_alloc(args->blocks, args->timeout);
     return 0;
 }
 
-static void test_mblock_thread_waits(void)
+static void test_mblock_thread_timeouts(void)
 {
     mblock_t blocks;
     nlist_node_t storage[1];
@@ -237,17 +294,48 @@ static void test_mblock_thread_waits(void)
     assert(mblock_alloc(&blocks, 20) == 0);
     assert(sys_time_goes(&start) >= 15);
 
-    struct alloc_waiter_args args = { .blocks = &blocks, .result = 0 };
+    mblock_free(&blocks, only);
+    mblock_destroy(&blocks);
+}
+
+static void check_mblock_alloc_wake(int timeout)
+{
+    mblock_t blocks;
+    nlist_node_t storage[1];
+    assert(mblock_init(&blocks, storage, sizeof(storage[0]), 1,
+                       NLOCKER_THREAD) == NET_ERR_OK);
+    void *only = mblock_alloc(&blocks, -1);
+    assert(only == &storage[0]);
+
+    pthread_barrier_t ready;
+    assert(pthread_barrier_init(&ready, 0, 2) == 0);
+    struct alloc_waiter_args args = {
+        .blocks = &blocks,
+        .ready = &ready,
+        .timeout = timeout,
+        .result = 0,
+    };
     pthread_t waiter;
-    assert(pthread_create(&waiter, 0, alloc_forever, &args) == 0);
-    sleep_ms(10);
+    assert(pthread_create(&waiter, 0, alloc_waiter, &args) == 0);
+    wait_at_barrier(&ready);
     assert(mblock_free_cnt(&blocks) == 0);
     mblock_free(&blocks, only);
     assert(pthread_join(waiter, 0) == 0);
     assert(args.result == only);
     assert(mblock_alloc(&blocks, -1) == 0);
     mblock_free(&blocks, only);
+    assert(pthread_barrier_destroy(&ready) == 0);
     mblock_destroy(&blocks);
+}
+
+static void test_mblock_permanent_alloc_wait(void)
+{
+    check_mblock_alloc_wake(0);
+}
+
+static void test_mblock_timed_alloc_wake(void)
+{
+    check_mblock_alloc_wake(500);
 }
 
 static void test_mblock_none_never_waits(void)
@@ -261,14 +349,12 @@ static void test_mblock_none_never_waits(void)
     assert(mblock_alloc(&blocks, -1) == 0);
 
     net_time_t start;
-    sys_time_curr(&start);
     assert(mblock_alloc(&blocks, 0) == 0);
-    assert(sys_time_goes(&start) < 100);
     assert(mblock_free_cnt(&blocks) == 0);
 
     sys_time_curr(&start);
-    assert(mblock_alloc(&blocks, 200) == 0);
-    assert(sys_time_goes(&start) < 100);
+    assert(mblock_alloc(&blocks, 2000) == 0);
+    assert(sys_time_goes(&start) < 1000);
     mblock_free(&blocks, &storage[0]);
     mblock_destroy(&blocks);
 }
@@ -285,8 +371,12 @@ int main(void)
     test_invalid_arguments();
     test_fixq_timeout_and_ownership();
     test_fixq_permanent_send_wait();
+    test_fixq_timed_send_wake();
     test_fixq_permanent_recv_wait();
-    test_mblock_thread_waits();
+    test_fixq_timed_recv_wake();
+    test_mblock_thread_timeouts();
+    test_mblock_permanent_alloc_wait();
+    test_mblock_timed_alloc_wake();
     test_mblock_none_never_waits();
     return 0;
 }
