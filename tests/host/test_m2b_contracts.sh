@@ -24,6 +24,19 @@ require_absence() {
   fi
 }
 
+require_order() {
+  file=$1
+  first=$2
+  second=$3
+  message=$4
+  first_line=$(grep -Fn "$first" "$root/$file" 2>/dev/null | head -1 | cut -d: -f1 || true)
+  second_line=$(grep -Fn "$second" "$root/$file" 2>/dev/null | head -1 | cut -d: -f1 || true)
+  if [ -z "$first_line" ] || [ -z "$second_line" ] || [ "$first_line" -ge "$second_line" ]; then
+    echo "FAIL: $message" >&2
+    status=1
+  fi
+}
+
 require_text kernel/include/timeros/cpu.h \
   'struct TaskControlBlock *proc;' 'each CPU must own its current process'
 require_text kernel/include/timeros/cpu.h \
@@ -44,6 +57,9 @@ require_text kernel/src/task.c \
   'void scheduler(void)' 'each online hart needs a scheduler loop'
 require_text kernel/src/task.c \
   '__switch(&cpu->scheduler_context' 'processes must switch through per-CPU scheduler state'
+require_order kernel/src/task.c \
+  'struct TaskControlBlock *p = pick_runnable(cpu);' 'cpu->idle = 0;' \
+  'a scheduler must stay published idle until it selects runnable work'
 require_text kernel/src/task.c \
   'printk("QS:SMP_SCHED_OK\n");' 'migration completion needs a stable marker'
 require_text kernel/src/timer.c \

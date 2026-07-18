@@ -21,6 +21,7 @@ test-host:
 	./tests/host/test_m2b_smoke_script.sh
 	./tests/host/test_m2c_contracts.sh
 	./tests/host/test_m2c_smoke_script.sh
+	./tests/host/test_m3_virtqueue.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
