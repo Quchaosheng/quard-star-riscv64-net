@@ -8,6 +8,7 @@
 
 #include <timeros/riscv.h>
 #include <timeros/spinlock.h>
+#include <timeros/task.h>
 #include <timeros/wait.h>
 
 #define NET_SYS_SEM_MAX 32
@@ -106,8 +107,15 @@ net_err_t sys_sem_wait(sys_sem_t sem, int timeout_ms)
 
 void sys_sem_notify(sys_sem_t sem)
 {
-    if (sem != SYS_SEM_INVALID && sys_sem_valid(sem))
-        sem_post(&sem->sem);
+    if (sem == SYS_SEM_INVALID || !sys_sem_valid(sem))
+        return;
+
+    spin_lock(&sem->sem.lock);
+    if (sem->sem.count < INT_MAX)
+        sem->sem.count++;
+    if (sem->sem.wait.waiters != 0)
+        task_wake(&sem->sem.wait, 0);
+    spin_unlock(&sem->sem.lock);
 }
 
 #else
