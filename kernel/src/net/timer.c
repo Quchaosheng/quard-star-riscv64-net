@@ -144,6 +144,7 @@ net_err_t net_timer_check_tmo(int diff_ms)
         }
 
         diff_ms -= first->curr;
+        first->curr = 0;
         while ((node = nlist_first(&timer_list)) != 0) {
             net_timer_t *timer = nlist_entry(node, net_timer_t, node);
             if (timer->curr != 0)
