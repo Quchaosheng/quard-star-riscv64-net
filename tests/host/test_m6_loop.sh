@@ -27,6 +27,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/icmpv4.c" \
   "$root/kernel/src/net/loop.c" \
   "$root/kernel/src/net/net_stack.c" \
+  "$root/kernel/src/net/net_exec.c" \
   -o "$tmp/test_m6_loop"
 ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
   UBSAN_OPTIONS=halt_on_error=1 timeout 15s "$tmp/test_m6_loop"
