@@ -22,6 +22,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/ether.c" \
   "$root/kernel/src/net/arp.c" \
   "$root/kernel/src/net/ipv4.c" \
+  "$root/kernel/src/net/loop.c" \
   "$root/kernel/src/net/timer.c" \
   "$root/kernel/src/net/udp.c" \
   "$root/kernel/src/net/socket.c" \

@@ -48,6 +48,7 @@ test-host:
 	./tests/host/test_m6b_udp.sh
 	./tests/host/test_m6b_exec.sh
 	./tests/host/test_m6b_socket.sh
+	./tests/host/test_m6b_syscall.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
