@@ -40,5 +40,8 @@ net_err_t udp_sendto(udp_pcb_t *pcb, netif_t *netif, const ipaddr_t *dest,
                      uint16_t dest_port, const uint8_t *data, int size);
 int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
                  uint16_t *src_port, int timeout_ms);
+net_err_t udp_recv_acquire(udp_pcb_t *pcb);
+int udp_recvfrom_acquired(udp_pcb_t *pcb, uint8_t *data, int size,
+                          ipaddr_t *src, uint16_t *src_port, int timeout_ms);
 
 #endif

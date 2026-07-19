@@ -11,6 +11,10 @@
 
 static int copy_from_user(void *dst, const char *src, size_t len);
 
+#ifdef QS_M6B_TEST
+static int m6b_timeout_observed;
+#endif
+
 typedef struct _socket_exec_t {
     int op;
     int handle;
@@ -114,6 +118,15 @@ static int copy_to_user(char *dst, const void *src, size_t len)
 		*p = s[i];
 	}
 	return 0;
+}
+
+static int user_range_check(const char *address, size_t length, u64 required)
+{
+    for (size_t i = 0; i < length; i++) {
+        if (translate_user_ptr(address + i, required) == 0)
+            return -1;
+    }
+    return 0;
 }
 
 static int copy_user_cstr(char *dst, size_t max, const char *src)
@@ -269,9 +282,25 @@ static int __sys_recvfrom(int handle, const net_recvfrom_args *user_args)
     uint8_t data[SOCKET_IO_MAX];
     ipaddr_t source;
     uint16_t source_port;
+    size_t address_length = 0;
     if (copy_from_user(&args, (const char *)user_args, sizeof(args)) < 0 ||
         args.flags != 0 || args.length > sizeof(data) || args.data == 0)
         return NET_ERR_PARAM;
+    if (user_range_check(args.data, args.length, PTE_W) < 0)
+        return NET_ERR_PARAM;
+    if (args.address != 0 || args.address_length != 0) {
+        if (args.address == 0 || args.address_length == 0 ||
+            copy_from_user(&address_length,
+                           (const char *)args.address_length,
+                           sizeof(address_length)) < 0 ||
+            address_length < sizeof(net_sockaddr_in) ||
+            user_range_check((const char *)args.address,
+                             sizeof(net_sockaddr_in), PTE_W) < 0 ||
+            user_range_check((const char *)args.address_length,
+                             sizeof(address_length), PTE_W) < 0)
+            return NET_ERR_PARAM;
+        address_length = sizeof(net_sockaddr_in);
+    }
     int result = net_socket_recvfrom(handle, data, (int)args.length,
                                      &source, &source_port,
                                      args.timeout_ms);
@@ -279,35 +308,28 @@ static int __sys_recvfrom(int handle, const net_recvfrom_args *user_args)
 #ifdef QS_M6B_TEST
     {
         if (result == NET_ERR_TMO)
-            m6b_mark_udp_timeout();
+            m6b_timeout_observed = 1;
         return result;
     }
 #else
         return result;
 #endif
-#ifdef QS_M6B_TEST
-    m6b_mark_udp();
-#endif
     if (copy_to_user(args.data, data, (size_t)result) < 0)
         return NET_ERR_PARAM;
     if (args.address != 0 || args.address_length != 0) {
-        size_t length;
-        if (args.address == 0 || args.address_length == 0 ||
-            copy_from_user(&length, (const char *)args.address_length,
-                           sizeof(length)) < 0 ||
-            length < sizeof(net_sockaddr_in))
-            return NET_ERR_PARAM;
         net_sockaddr_in address = {
             .family = NET_AF_INET,
             .port = x_htons(source_port),
             .address = source.q_addr,
         };
-        length = sizeof(address);
         if (copy_to_user((char *)args.address, &address, sizeof(address)) < 0 ||
-            copy_to_user((char *)args.address_length, &length,
-                         sizeof(length)) < 0)
+            copy_to_user((char *)args.address_length, &address_length,
+                         sizeof(address_length)) < 0)
             return NET_ERR_PARAM;
     }
+#ifdef QS_M6B_TEST
+    m6b_mark_udp();
+#endif
     return result;
 }
 
@@ -317,7 +339,12 @@ static int __sys_close(int handle)
         .op = SOCKET_EXEC_CLOSE,
         .handle = handle,
     };
-    return socket_exec_wait(&request);
+    int result = socket_exec_wait(&request);
+#ifdef QS_M6B_TEST
+    if (result == NET_ERR_OK && m6b_timeout_observed)
+        m6b_mark_udp_timeout();
+#endif
+    return result;
 }
 
 reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)

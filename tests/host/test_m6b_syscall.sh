@@ -27,5 +27,9 @@ grep -q 'sys_sendto' "$root/kernel/lib/app.c" || \
   fail 'missing user sendto wrapper'
 grep -q 'sys_recvfrom' "$root/kernel/lib/app.c" || \
   fail 'missing user recvfrom wrapper'
+grep -q 'user_range_check.*args.data' "$root/kernel/src/syscall.c" || \
+  fail 'recvfrom must validate output before consuming a datagram'
+grep -q 'm6b_timeout_observed' "$root/kernel/src/syscall.c" || \
+  fail 'kernel must defer timeout completion until close'
 
 echo 'PASS: M6B socket syscall contracts'

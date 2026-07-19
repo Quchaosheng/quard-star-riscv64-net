@@ -19,5 +19,8 @@ grep -q 'sys_write(stdout,out_buf,res);' "$root/kernel/lib/printf.c" || \
   fail 'user printf must not write the string terminator'
 grep -q 'TAP ARP/ICMP/UDP acceptance' "$root/scripts/m5-smoke.sh" || \
   fail 'M6B result must describe UDP acceptance'
+sem_max=$(sed -n 's/^#define NET_SYS_SEM_MAX //p' "$root/kernel/src/net/net_sys.c")
+[ "${sem_max:-0}" -ge 68 ] || \
+  fail 'target semaphore pool must support all 16 UDP sockets'
 
 echo 'PASS: M6B source and build contracts'

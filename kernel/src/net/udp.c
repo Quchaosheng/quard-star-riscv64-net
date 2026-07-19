@@ -104,8 +104,7 @@ net_err_t udp_close(udp_pcb_t *pcb)
     int waiting = pcb->recv_waiting;
     nlocker_unlock(&pcb->state_locker);
     if (waiting) {
-        if (fixq_send(&pcb->recv_queue, pcb, -1) < 0)
-            return NET_ERR_FULL;
+        fixq_wake_receiver(&pcb->recv_queue);
         (void)sys_sem_wait(pcb->close_done, 0);
     }
     void *item;
@@ -167,6 +166,8 @@ net_err_t udp_in(netif_t *netif, const ipaddr_t *src,
     uint16_t length = x_ntohs(header->total_len);
     if (header->checksum != 0 && udp_checksum(buf, src, dest, length) != 0)
         return NET_ERR_CHKSUM;
+    if (pktbuf_resize(buf, length) < 0)
+        return NET_ERR_SIZE;
     uint16_t port = x_ntohs(header->dest_port);
     for (int i = 0; i < UDP_PCB_MAX; i++) {
         udp_pcb_t *pcb = pcbs[i];
@@ -190,10 +191,9 @@ net_err_t udp_in(netif_t *netif, const ipaddr_t *src,
     return NET_ERR_UNREACH;
 }
 
-int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
-                 uint16_t *src_port, int timeout_ms)
+net_err_t udp_recv_acquire(udp_pcb_t *pcb)
 {
-    if (pcb == 0 || data == 0 || size < 0)
+    if (pcb == 0)
         return NET_ERR_PARAM;
     nlocker_lock(&pcb->state_locker);
     if (!pcb->open || pcb->recv_waiting) {
@@ -202,6 +202,14 @@ int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
     }
     pcb->recv_waiting = 1;
     nlocker_unlock(&pcb->state_locker);
+    return NET_ERR_OK;
+}
+
+int udp_recvfrom_acquired(udp_pcb_t *pcb, uint8_t *data, int size,
+                          ipaddr_t *src, uint16_t *src_port, int timeout_ms)
+{
+    if (pcb == 0 || data == 0 || size < 0)
+        return NET_ERR_PARAM;
     void *item = fixq_recv(&pcb->recv_queue, timeout_ms);
     nlocker_lock(&pcb->state_locker);
     pcb->recv_waiting = 0;
@@ -237,6 +245,16 @@ int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
     pktbuf_free(record->buf);
     record->buf = 0;
     return copied;
+}
+
+int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
+                 uint16_t *src_port, int timeout_ms)
+{
+    if (pcb == 0 || data == 0 || size < 0)
+        return NET_ERR_PARAM;
+    if (udp_recv_acquire(pcb) < 0)
+        return NET_ERR_STATE;
+    return udp_recvfrom_acquired(pcb, data, size, src, src_port, timeout_ms);
 }
 
 net_err_t udp_header_check(const udp_hdr_t *header, int size)
