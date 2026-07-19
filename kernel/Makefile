@@ -60,6 +60,7 @@ NET_SRCS_C = \
 	net/icmpv4.c \
 	net/loop.c \
 	net/net_stack.c \
+	net/udp.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
