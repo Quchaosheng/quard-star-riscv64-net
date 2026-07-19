@@ -7,6 +7,7 @@
 #include <timeros/net/ipv4.h>
 #include <timeros/net/loop.h>
 #include <timeros/net/net_cfg.h>
+#include <timeros/net/net_exec.h>
 #include <timeros/net/net_sys.h>
 #include <timeros/net/netif_virtio.h>
 #include <timeros/net/pktbuf.h>
@@ -174,6 +175,9 @@ net_err_t net_stack_init(void)
     net_err_t err = net_sys_init();
     if (err < 0)
         return err;
+    err = net_exec_init();
+    if (err < 0)
+        return err;
     err = pktbuf_init();
     if (err < 0)
         return err;
@@ -266,6 +270,8 @@ void net_stack_worker(void *arg)
         netif = stack_netif;
     sys_time_curr(&timer_time);
     for (;;) {
+        while (net_exec_run_once() == NET_ERR_OK)
+            ;
         (void)net_timer_check_tmo(sys_time_goes(&timer_time));
 #ifdef QS_M6A_TEST
         net_stack_queue_probe();
