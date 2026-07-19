@@ -14,10 +14,12 @@ typedef struct __attribute__((packed)) _tcp_pseudo_t {
 } tcp_pseudo_t;
 
 static tcp_pcb_t *pcbs[TCP_PCB_MAX];
+static nlocker_t table_locker;
 static uint16_t next_ephemeral = 49152;
 static uint32_t next_iss = 1000;
 
 static net_err_t tcp_release_now(tcp_pcb_t *pcb);
+static net_err_t tcp_request_release(tcp_pcb_t *pcb);
 
 static int tcp_find_slot(tcp_pcb_t *pcb)
 {
@@ -95,7 +97,11 @@ static pktbuf_t *tcp_make_segment(tcp_pcb_t *pcb, uint32_t seq,
 
 static net_err_t tcp_send_ack(tcp_pcb_t *pcb)
 {
-    pktbuf_t *ack = tcp_make_segment(pcb, pcb->snd_nxt, pcb->rcv_nxt,
+    nlocker_lock(&pcb->state_locker);
+    uint32_t seq = pcb->snd_nxt;
+    uint32_t ack_number = pcb->rcv_nxt;
+    nlocker_unlock(&pcb->state_locker);
+    pktbuf_t *ack = tcp_make_segment(pcb, seq, ack_number,
                                      TCP_FLAG_ACK, 0, 0);
 
     if (ack == 0)
@@ -170,7 +176,26 @@ static void tcp_time_wait_proc(net_timer_t *timer, void *arg)
         nlocker_unlock(&pcb->state_locker);
         for (int i = 0; i < (close_waiters != 0 ? close_waiters : 1); i++)
             sys_sem_notify(pcb->close_done);
+        (void)tcp_request_release(pcb);
     }
+}
+
+static void tcp_release_proc(net_timer_t *timer, void *arg)
+{
+    (void)timer;
+    tcp_pcb_t *pcb = (tcp_pcb_t *)arg;
+
+    nlocker_lock(&pcb->state_locker);
+    int release = pcb->opened && pcb->release_pending &&
+                  pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
+                  pcb->close_waiters == 0;
+    int retry = pcb->opened && pcb->release_pending && !release;
+    nlocker_unlock(&pcb->state_locker);
+    if (release)
+        (void)tcp_release_now(pcb);
+    else if (retry)
+        (void)net_timer_add(&pcb->release_timer, "tcp-release",
+                            tcp_release_proc, pcb, 1, 0);
 }
 
 static net_err_t tcp_arm_timer(tcp_pcb_t *pcb)
@@ -241,6 +266,7 @@ static net_err_t tcp_start_outstanding(tcp_pcb_t *pcb, pktbuf_t *segment,
 
 net_err_t tcp_init(void)
 {
+    nlocker_init(&table_locker, NLOCKER_THREAD);
     plat_memset(pcbs, 0, sizeof(pcbs));
     next_ephemeral = 49152;
     next_iss = 1000;
@@ -249,8 +275,13 @@ net_err_t tcp_init(void)
 
 net_err_t tcp_open(tcp_pcb_t *pcb)
 {
-    if (pcb == 0 || tcp_find_slot(pcb) >= 0)
+    if (pcb == 0)
         return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) >= 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
     int slot = -1;
     for (int i = 0; i < TCP_PCB_MAX; i++) {
         if (pcbs[i] == 0) {
@@ -258,8 +289,10 @@ net_err_t tcp_open(tcp_pcb_t *pcb)
             break;
         }
     }
-    if (slot < 0)
+    if (slot < 0) {
+        nlocker_unlock(&table_locker);
         return NET_ERR_MEM;
+    }
 
     plat_memset(pcb, 0, sizeof(*pcb));
     nlocker_init(&pcb->recv_locker, NLOCKER_THREAD);
@@ -277,6 +310,7 @@ net_err_t tcp_open(tcp_pcb_t *pcb)
     pcb->state = TCP_STATE_CLOSED;
     pcb->error = NET_ERR_OK;
     pcbs[slot] = pcb;
+    nlocker_unlock(&table_locker);
     return NET_ERR_OK;
 
 fail:
@@ -286,6 +320,7 @@ fail:
     nlocker_destroy(&pcb->recv_locker);
     nlocker_destroy(&pcb->state_locker);
     plat_memset(pcb, 0, sizeof(*pcb));
+    nlocker_unlock(&table_locker);
     return NET_ERR_MEM;
 }
 
@@ -294,8 +329,11 @@ net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
 {
     if (pcb == 0 || netif == 0 || remote == 0 || remote_port == 0)
         return NET_ERR_PARAM;
-    if (tcp_find_slot(pcb) < 0)
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) < 0) {
+        nlocker_unlock(&table_locker);
         return NET_ERR_STATE;
+    }
     nlocker_lock(&pcb->state_locker);
     int unavailable = !pcb->opened || pcb->release_pending ||
                       pcb->connect_waiters != 0 ||
@@ -303,6 +341,7 @@ net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
                       pcb->state != TCP_STATE_CLOSED ||
                       pcb->outstanding != 0;
     nlocker_unlock(&pcb->state_locker);
+    nlocker_unlock(&table_locker);
     if (unavailable)
         return NET_ERR_STATE;
     if (netif->state != NETIF_ACTIVE)
@@ -318,6 +357,7 @@ net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
     pcb->recv_head = 0;
     pcb->recv_count = 0;
     nlocker_unlock(&pcb->recv_locker);
+    nlocker_lock(&pcb->state_locker);
     tcp_reset_connection(pcb);
     pcb->error = NET_ERR_OK;
     pcb->terminal_notified = 0;
@@ -331,18 +371,25 @@ net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
     pcb->snd_una = pcb->iss;
     pcb->snd_nxt = pcb->iss + 1U;
     pcb->rcv_nxt = 0;
+    nlocker_unlock(&pcb->state_locker);
     pktbuf_t *syn = tcp_make_segment(pcb, pcb->iss, 0,
                                      TCP_FLAG_SYN, 0, 0);
     if (syn == 0) {
+        nlocker_lock(&pcb->state_locker);
         tcp_reset_connection(pcb);
+        nlocker_unlock(&pcb->state_locker);
         return NET_ERR_MEM;
     }
     net_err_t err = tcp_start_outstanding(pcb, syn, pcb->snd_nxt);
     if (err < 0) {
+        nlocker_lock(&pcb->state_locker);
         tcp_reset_connection(pcb);
+        nlocker_unlock(&pcb->state_locker);
         return err;
     }
+    nlocker_lock(&pcb->state_locker);
     pcb->state = TCP_STATE_SYN_SENT;
+    nlocker_unlock(&pcb->state_locker);
     return NET_ERR_OK;
 }
 
@@ -350,15 +397,22 @@ net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size)
 {
     if (pcb == 0 || data == 0 || size <= 0 || size > TCP_MSS)
         return NET_ERR_PARAM;
-    if (!pcb->opened || pcb->state != TCP_STATE_ESTABLISHED)
+    nlocker_lock(&pcb->state_locker);
+    int established = pcb->opened &&
+                      pcb->state == TCP_STATE_ESTABLISHED;
+    uint16_t window = pcb->window;
+    uint32_t seq = pcb->snd_nxt;
+    uint32_t ack = pcb->rcv_nxt;
+    nlocker_unlock(&pcb->state_locker);
+    if (!established)
         return NET_ERR_STATE;
     if (pcb->outstanding != 0)
         return NET_ERR_FULL;
-    if (pcb->window == 0 || pcb->window < (uint16_t)size)
+    if (window == 0 || window < (uint16_t)size)
         return NET_ERR_FULL;
 
-    uint32_t end = pcb->snd_nxt + (uint32_t)size;
-    pktbuf_t *segment = tcp_make_segment(pcb, pcb->snd_nxt, pcb->rcv_nxt,
+    uint32_t end = seq + (uint32_t)size;
+    pktbuf_t *segment = tcp_make_segment(pcb, seq, ack,
                                          TCP_FLAG_PSH | TCP_FLAG_ACK,
                                          data, size);
     if (segment == 0)
@@ -366,41 +420,54 @@ net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size)
     net_err_t err = tcp_start_outstanding(pcb, segment, end);
     if (err < 0)
         return err;
+    nlocker_lock(&pcb->state_locker);
     pcb->snd_nxt = end;
+    nlocker_unlock(&pcb->state_locker);
     return NET_ERR_OK;
 }
 
-static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, sys_sem_t sem,
-                                     int *waiters, int timeout_ms)
+static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
+                                     int connect_wait)
 {
-    if (pcb == 0 || tcp_find_slot(pcb) < 0)
+    if (pcb == 0)
         return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) < 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
     nlocker_lock(&pcb->state_locker);
+    sys_sem_t sem = connect_wait ? pcb->connect_done : pcb->close_done;
+    int *waiters = connect_wait ? &pcb->connect_waiters :
+                                  &pcb->close_waiters;
     if (!pcb->opened || pcb->release_pending) {
         nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
         return NET_ERR_STATE;
     }
     if (pcb->error < 0) {
         net_err_t terminal_error = pcb->error;
         nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
         return terminal_error;
+    }
+    if ((connect_wait && pcb->state == TCP_STATE_ESTABLISHED) ||
+        (!connect_wait && pcb->state == TCP_STATE_CLOSED)) {
+        (void)sys_sem_wait(sem, -1);
+        nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
+        return NET_ERR_OK;
     }
     (*waiters)++;
     nlocker_unlock(&pcb->state_locker);
+    nlocker_unlock(&table_locker);
 
     net_err_t err = sys_sem_wait(sem, timeout_ms);
     nlocker_lock(&pcb->state_locker);
     if (err == NET_ERR_OK && pcb->error < 0)
         err = pcb->error;
     (*waiters)--;
-    int release = pcb->connect_waiters == 0 &&
-                  pcb->recv_waiters == 0 &&
-                  pcb->close_waiters == 0 && pcb->release_pending;
-    if (release)
-        pcb->opened = 0;
     nlocker_unlock(&pcb->state_locker);
-    if (release)
-        (void)tcp_release_now(pcb);
     if (timeout_ms < 0 && err == NET_ERR_TMO)
         return NET_ERR_NONE;
     return err;
@@ -410,16 +477,14 @@ net_err_t tcp_wait_connect(tcp_pcb_t *pcb, int timeout_ms)
 {
     if (pcb == 0)
         return NET_ERR_PARAM;
-    return tcp_wait_completion(pcb, pcb->connect_done,
-                               &pcb->connect_waiters, timeout_ms);
+    return tcp_wait_completion(pcb, timeout_ms, 1);
 }
 
 net_err_t tcp_wait_close(tcp_pcb_t *pcb, int timeout_ms)
 {
     if (pcb == 0)
         return NET_ERR_PARAM;
-    return tcp_wait_completion(pcb, pcb->close_done,
-                               &pcb->close_waiters, timeout_ms);
+    return tcp_wait_completion(pcb, timeout_ms, 0);
 }
 
 int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
@@ -427,19 +492,27 @@ int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
 {
     if (pcb == 0 || data == 0 || size <= 0)
         return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) < 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
     nlocker_lock(&pcb->state_locker);
     if (!pcb->opened || pcb->release_pending) {
         nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
         return NET_ERR_STATE;
     }
     if (pcb->state == TCP_STATE_CLOSED ||
         pcb->state == TCP_STATE_TIME_WAIT) {
         net_err_t state_error = pcb->error < 0 ? pcb->error : NET_ERR_STATE;
         nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
         return state_error;
     }
     pcb->recv_waiters++;
     nlocker_unlock(&pcb->state_locker);
+    nlocker_unlock(&table_locker);
 
     int result;
     for (;;) {
@@ -488,14 +561,7 @@ int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
 
     nlocker_lock(&pcb->state_locker);
     pcb->recv_waiters--;
-    int release = pcb->connect_waiters == 0 &&
-                  pcb->recv_waiters == 0 &&
-                  pcb->close_waiters == 0 && pcb->release_pending;
-    if (release)
-        pcb->opened = 0;
     nlocker_unlock(&pcb->state_locker);
-    if (release)
-        (void)tcp_release_now(pcb);
     return result;
 }
 
@@ -518,13 +584,41 @@ net_err_t tcp_retransmit_due(tcp_pcb_t *pcb)
 
 static net_err_t tcp_release_now(tcp_pcb_t *pcb)
 {
-    int slot = tcp_find_slot(pcb);
-
-    if (pcb == 0 || slot < 0)
+    if (pcb == 0)
         return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    int slot = tcp_find_slot(pcb);
+    if (slot < 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
+    nlocker_lock(&pcb->state_locker);
+    int releasable = pcb->release_pending &&
+                     pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
+                     pcb->close_waiters == 0;
+    if (!releasable) {
+        nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
+        return NET_ERR_STATE;
+    }
+    pcb->opened = 0;
+    pcbs[slot] = 0;
+    nlocker_unlock(&pcb->state_locker);
+    nlocker_unlock(&table_locker);
     tcp_clear_outstanding(pcb);
     net_timer_remove(&pcb->time_wait_timer);
-    pcbs[slot] = 0;
+    net_timer_remove(&pcb->release_timer);
+    nlocker_lock(&pcb->recv_locker);
+    pcb->recv_head = 0;
+    pcb->recv_count = 0;
+    nlocker_unlock(&pcb->recv_locker);
+    nlocker_lock(&pcb->state_locker);
+    tcp_reset_connection(pcb);
+    pcb->release_pending = 0;
+    pcb->connect_waiters = 0;
+    pcb->recv_waiters = 0;
+    pcb->close_waiters = 0;
+    nlocker_unlock(&pcb->state_locker);
     sys_sem_free(pcb->close_done);
     sys_sem_free(pcb->recv_done);
     sys_sem_free(pcb->connect_done);
@@ -533,14 +627,6 @@ static net_err_t tcp_release_now(tcp_pcb_t *pcb)
     pcb->connect_done = SYS_SEM_INVALID;
     nlocker_destroy(&pcb->recv_locker);
     nlocker_destroy(&pcb->state_locker);
-    pcb->opened = 0;
-    pcb->release_pending = 0;
-    pcb->connect_waiters = 0;
-    pcb->recv_waiters = 0;
-    pcb->close_waiters = 0;
-    pcb->recv_head = 0;
-    pcb->recv_count = 0;
-    tcp_reset_connection(pcb);
     return NET_ERR_OK;
 }
 
@@ -550,10 +636,12 @@ static net_err_t tcp_request_release(tcp_pcb_t *pcb)
     pcb->release_pending = 1;
     int release = pcb->connect_waiters == 0 &&
                   pcb->recv_waiters == 0 && pcb->close_waiters == 0;
-    if (release)
-        pcb->opened = 0;
     nlocker_unlock(&pcb->state_locker);
-    return release ? tcp_release_now(pcb) : NET_ERR_OK;
+    if (release && tcp_release_now(pcb) == NET_ERR_OK)
+        return NET_ERR_OK;
+    net_err_t err = net_timer_add(&pcb->release_timer, "tcp-release",
+                                  tcp_release_proc, pcb, 1, 0);
+    return err == NET_ERR_EXIST ? NET_ERR_OK : err;
 }
 
 static net_err_t tcp_abort_and_release(tcp_pcb_t *pcb)
@@ -570,13 +658,21 @@ static net_err_t tcp_abort_and_release(tcp_pcb_t *pcb)
 
 net_err_t tcp_close(tcp_pcb_t *pcb)
 {
-    if (pcb == 0 || tcp_find_slot(pcb) < 0)
+    if (pcb == 0)
         return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) < 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
     nlocker_lock(&pcb->state_locker);
     int opened = pcb->opened;
     int release_pending = pcb->release_pending;
     tcp_state_t state = pcb->state;
+    uint32_t snd_nxt = pcb->snd_nxt;
+    uint32_t rcv_nxt = pcb->rcv_nxt;
     nlocker_unlock(&pcb->state_locker);
+    nlocker_unlock(&table_locker);
     if (!opened)
         return NET_ERR_PARAM;
     if (release_pending)
@@ -590,16 +686,18 @@ net_err_t tcp_close(tcp_pcb_t *pcb)
     if (pcb->outstanding != 0)
         return NET_ERR_FULL;
 
-    uint32_t end = pcb->snd_nxt + 1U;
-    pktbuf_t *fin = tcp_make_segment(pcb, pcb->snd_nxt, pcb->rcv_nxt,
+    uint32_t end = snd_nxt + 1U;
+    pktbuf_t *fin = tcp_make_segment(pcb, snd_nxt, rcv_nxt,
                                      TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0);
     if (fin == 0)
         return NET_ERR_MEM;
     net_err_t err = tcp_start_outstanding(pcb, fin, end);
     if (err < 0)
         return err;
+    nlocker_lock(&pcb->state_locker);
     pcb->snd_nxt = end;
     pcb->state = TCP_STATE_FIN_WAIT_1;
+    nlocker_unlock(&pcb->state_locker);
     return NET_ERR_OK;
 }
 
@@ -607,30 +705,45 @@ static tcp_pcb_t *tcp_find_pcb(netif_t *netif, const ipaddr_t *src,
                                const ipaddr_t *dest, uint16_t src_port,
                                uint16_t dest_port)
 {
+    nlocker_lock(&table_locker);
     for (int i = 0; i < TCP_PCB_MAX; i++) {
         tcp_pcb_t *pcb = pcbs[i];
 
-        if (pcb != 0 && pcb->opened && pcb->netif == netif &&
-            pcb->local_port == dest_port &&
-            pcb->remote_port == src_port &&
-            ipaddr_is_equal(&pcb->local_ip, dest) &&
-            ipaddr_is_equal(&pcb->remote_ip, src))
+        if (pcb == 0)
+            continue;
+        nlocker_lock(&pcb->state_locker);
+        int match = pcb->opened && pcb->netif == netif &&
+                    pcb->local_port == dest_port &&
+                    pcb->remote_port == src_port &&
+                    ipaddr_is_equal(&pcb->local_ip, dest) &&
+                    ipaddr_is_equal(&pcb->remote_ip, src);
+        nlocker_unlock(&pcb->state_locker);
+        if (match) {
+            nlocker_unlock(&table_locker);
             return pcb;
+        }
     }
+    nlocker_unlock(&table_locker);
     return 0;
 }
 
 static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 {
+    nlocker_lock(&pcb->state_locker);
     if ((int32_t)(ack - pcb->snd_una) < 0 ||
-        (int32_t)(ack - pcb->snd_nxt) > 0)
+        (int32_t)(ack - pcb->snd_nxt) > 0) {
+        nlocker_unlock(&pcb->state_locker);
         return NET_ERR_STATE;
-    if (pcb->outstanding != 0 && ack == pcb->outstanding_end) {
+    }
+    int complete = pcb->outstanding != 0 && ack == pcb->outstanding_end;
+    if (complete) {
         pcb->snd_una = ack;
-        tcp_clear_outstanding(pcb);
         if (pcb->state == TCP_STATE_FIN_WAIT_1)
             pcb->state = TCP_STATE_FIN_WAIT_2;
     }
+    nlocker_unlock(&pcb->state_locker);
+    if (complete)
+        tcp_clear_outstanding(pcb);
     return NET_ERR_OK;
 }
 
@@ -696,21 +809,52 @@ net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
     tcp_pcb_t *pcb = tcp_find_pcb(netif, src, dest, src_port, dest_port);
     if (pcb == 0)
         return NET_ERR_UNREACH;
+    int payload_size = total - header_size;
+    nlocker_lock(&pcb->state_locker);
+    tcp_state_t state = pcb->state;
+    uint32_t rcv_nxt = pcb->rcv_nxt;
+    uint32_t iss = pcb->iss;
+    nlocker_unlock(&pcb->state_locker);
 
-    if (pcb->state == TCP_STATE_SYN_SENT) {
+    if (state == TCP_STATE_TIME_WAIT) {
+        uint32_t fin_seq = seq + (uint32_t)payload_size;
+        if ((flags & TCP_FLAG_FIN) == 0 || (flags & TCP_FLAG_ACK) == 0 ||
+            (flags & TCP_FLAG_SYN) != 0 ||
+            (fin_seq != rcv_nxt && fin_seq + 1U != rcv_nxt))
+            return NET_ERR_STATE;
+        err = tcp_accept_ack(pcb, ack);
+        if (err < 0)
+            return err;
+        err = tcp_send_ack(pcb);
+        if (err < 0)
+            return err;
+        net_timer_remove(&pcb->time_wait_timer);
+        err = net_timer_add(&pcb->time_wait_timer, "tcp-time-wait",
+                            tcp_time_wait_proc, pcb, TCP_TIME_WAIT_MS, 0);
+        if (err < 0)
+            return tcp_fail(pcb, err);
+        pktbuf_free(buf);
+        return NET_ERR_OK;
+    }
+
+    if (state == TCP_STATE_SYN_SENT) {
         if (total != header_size)
             return NET_ERR_FORMAT;
         if (flags != (TCP_FLAG_SYN | TCP_FLAG_ACK) ||
-            tcp_state_accept_ack(pcb->state, ack, pcb->iss) < 0)
+            tcp_state_accept_ack(state, ack, iss) < 0)
             return NET_ERR_STATE;
+        nlocker_lock(&pcb->state_locker);
         pcb->window = window;
         pcb->snd_una = ack;
         pcb->rcv_nxt = seq + 1U;
+        nlocker_unlock(&pcb->state_locker);
         tcp_clear_outstanding(pcb);
         err = tcp_send_ack(pcb);
         if (err < 0)
             return tcp_fail(pcb, err);
+        nlocker_lock(&pcb->state_locker);
         pcb->state = TCP_STATE_ESTABLISHED;
+        nlocker_unlock(&pcb->state_locker);
         nlocker_lock(&pcb->state_locker);
         int connect_waiters = pcb->connect_waiters;
         nlocker_unlock(&pcb->state_locker);
@@ -721,24 +865,28 @@ net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
         return NET_ERR_OK;
     }
 
-    if (pcb->state != TCP_STATE_ESTABLISHED &&
-        pcb->state != TCP_STATE_FIN_WAIT_1 &&
-        pcb->state != TCP_STATE_FIN_WAIT_2)
+    if (state != TCP_STATE_ESTABLISHED &&
+        state != TCP_STATE_FIN_WAIT_1 &&
+        state != TCP_STATE_FIN_WAIT_2)
         return NET_ERR_STATE;
     if ((flags & TCP_FLAG_ACK) == 0 || (flags & TCP_FLAG_SYN) != 0)
         return NET_ERR_STATE;
     err = tcp_accept_ack(pcb, ack);
     if (err < 0)
         return err;
+    nlocker_lock(&pcb->state_locker);
     pcb->window = window;
+    rcv_nxt = pcb->rcv_nxt;
+    nlocker_unlock(&pcb->state_locker);
 
-    int payload_size = total - header_size;
-    int32_t sequence_delta = (int32_t)(seq - pcb->rcv_nxt);
+    int32_t sequence_delta = (int32_t)(seq - rcv_nxt);
     if (payload_size > 0 && sequence_delta == 0) {
         err = tcp_queue_data(pcb, buf, header_size, payload_size);
         if (err < 0)
             return err;
+        nlocker_lock(&pcb->state_locker);
         pcb->rcv_nxt += (uint32_t)payload_size;
+        nlocker_unlock(&pcb->state_locker);
     }
     if (payload_size > 0) {
         err = tcp_send_ack(pcb);
@@ -748,12 +896,17 @@ net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
 
     if ((flags & TCP_FLAG_FIN) != 0) {
         uint32_t fin_seq = seq + (uint32_t)payload_size;
-        if (fin_seq == pcb->rcv_nxt) {
+        nlocker_lock(&pcb->state_locker);
+        int exact_fin = fin_seq == pcb->rcv_nxt;
+        tcp_state_t fin_state = pcb->state;
+        if (exact_fin)
             pcb->rcv_nxt++;
+        nlocker_unlock(&pcb->state_locker);
+        if (exact_fin) {
             err = tcp_send_ack(pcb);
             if (err < 0)
                 return err;
-            if (pcb->state == TCP_STATE_FIN_WAIT_2) {
+            if (fin_state == TCP_STATE_FIN_WAIT_2) {
                 nlocker_lock(&pcb->state_locker);
                 pcb->state = TCP_STATE_TIME_WAIT;
                 int recv_waiters = pcb->recv_waiters;

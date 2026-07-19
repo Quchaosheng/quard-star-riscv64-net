@@ -287,7 +287,9 @@ static void test_close_wakes_connect_waiter(netif_t *netif,
     assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(pthread_join(thread, 0) == 0);
     assert(arg.result == NET_ERR_STATE);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(!pcb.opened);
+    assert(tcp_wait_connect(&pcb, -1) == NET_ERR_PARAM);
 }
 
 static void *recv_thread(void *arg)
@@ -320,6 +322,7 @@ static void test_close_wakes_receive_waiter(netif_t *netif,
     assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(pthread_join(thread, 0) == 0);
     assert(arg.result == NET_ERR_STATE);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(!pcb.opened);
 }
 
@@ -344,6 +347,7 @@ static void test_abort_wakes_close_waiter(netif_t *netif,
     assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(pthread_join(thread, 0) == 0);
     assert(arg.result == NET_ERR_STATE);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(!pcb.opened);
 }
 
@@ -407,6 +411,8 @@ static void test_handshake_and_receive(netif_t *netif,
 static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
 {
     tcp_pcb_t pcb = { 0 };
+    recv_thread_arg_t arg = { .pcb = &pcb, .result = 0 };
+    pthread_t thread;
 
     establish(&pcb, netif, remote, 4803);
     assert(tcp_close(&pcb) == NET_ERR_OK);
@@ -418,11 +424,28 @@ static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
                           pcb.rcv_nxt, pcb.snd_nxt,
                           TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0));
     assert(pcb.state == TCP_STATE_TIME_WAIT);
-    assert(tcp_wait_close(&pcb, -1) == NET_ERR_NONE);
+    int before_duplicate = output_count;
+    input_ok(netif, remote, &netif->ipaddr,
+             make_segment(remote, &netif->ipaddr, 4803, pcb.local_port,
+                          pcb.rcv_nxt - 1U, pcb.snd_nxt,
+                          TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0));
+    assert(output_count == before_duplicate + 1);
+    assert(pcb.state == TCP_STATE_TIME_WAIT);
+    assert(pthread_create(&thread, 0, close_thread, &arg) == 0);
+    for (;;) {
+        nlocker_lock(&pcb.state_locker);
+        int waiting = pcb.close_waiters != 0;
+        nlocker_unlock(&pcb.state_locker);
+        if (waiting)
+            break;
+        sched_yield();
+    }
     assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
-    assert(pcb.state == TCP_STATE_CLOSED);
-    assert(tcp_wait_close(&pcb, -1) == NET_ERR_OK);
-    assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(pthread_join(thread, 0) == 0);
+    assert(arg.result == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(!pcb.opened);
+    assert(tcp_wait_close(&pcb, -1) == NET_ERR_PARAM);
     tcp_pcb_t reused = { 0 };
     assert(tcp_open(&reused) == NET_ERR_OK);
     assert(tcp_close(&reused) == NET_ERR_OK);
