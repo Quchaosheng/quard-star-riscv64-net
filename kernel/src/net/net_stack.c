@@ -290,6 +290,7 @@ void net_stack_worker(void *arg)
 #ifdef QS_M5_TEST
         net_stack_probe(netif);
 #endif
+        (void)net_timer_check_tmo(sys_time_goes(&timer_time));
         u64 wait_ticks = (u64)NET_STACK_RX_WAIT_MS *
                          NET_TIME_TICKS_PER_MS;
         int timer_ms = net_timer_first_tmo();

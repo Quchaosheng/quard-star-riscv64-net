@@ -44,6 +44,8 @@ open_line=$(line_of 'netif_open\("eth0"')
 printf '%s\n' "$worker" | grep -q 'sys_time_curr' || fail 'worker must establish timer baseline'
 printf '%s\n' "$worker" | grep -q 'sys_time_goes' || fail 'worker must advance time'
 printf '%s\n' "$worker" | grep -q 'net_timer_check_tmo' || fail 'worker must run shared timers'
+[ "$(printf '%s\n' "$worker" | grep -c 'net_timer_check_tmo')" -ge 2 ] || \
+  fail 'worker must refresh elapsed timers before polling'
 printf '%s\n' "$worker" | grep -q 'net_timer_first_tmo' || fail 'worker poll must be timer bounded'
 printf '%s\n' "$worker" | grep -q 'net_stack_process_input' || fail 'worker must drain loop input'
 
@@ -59,6 +61,7 @@ require '0x6[dD]36' kernel/src/net/net_stack.c
 require 'QS:M6_QUEUE_OK' kernel/src/net/net_stack.c
 require 'QS:M6_LOOP_OK' kernel/src/net/net_stack.c
 require 'QS:M6_ARP_TIMER_OK' kernel/src/net/arp.c
+require 'arp_clear\(netif\)' kernel/src/net/ether.c
 arp_callback=$(sed -n '/static void arp_cache_tmo/,/^}/p' "$root/kernel/src/net/arp.c")
 printf '%s\n' "$arp_callback" | grep -q 'QS:M6_ARP_TIMER_OK' || \
   fail 'ARP marker must be emitted by arp_cache_tmo'
