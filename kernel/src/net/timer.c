@@ -127,34 +127,39 @@ net_err_t net_timer_check_tmo(int diff_ms)
         return NET_ERR_PARAM;
 
     nlist_init(&wait_list);
-    node = nlist_first(&timer_list);
-    while (node != 0) {
-        nlist_node_t *next = nlist_node_next(node);
-        net_timer_t *timer = nlist_entry(node, net_timer_t, node);
-
-        if (timer->curr > diff_ms) {
-            timer->curr -= diff_ms;
-            break;
-        }
-
-        diff_ms -= timer->curr;
-        timer->curr = 0;
-        nlist_remove(&timer_list, node);
-        nlist_insert_last(&wait_list, node);
-        node = next;
-    }
-
     pending.list = &wait_list;
     pending.previous = pending_timers;
     pending_timers = &pending;
-    while ((node = nlist_remove_first(&wait_list)) != 0) {
-        net_timer_t *timer = nlist_entry(node, net_timer_t, node);
+    for (;;) {
+        node = nlist_first(&timer_list);
+        if (node == 0)
+            break;
+        net_timer_t *first = nlist_entry(node, net_timer_t, node);
+        if (diff_ms == 0 && first->curr != 0)
+            break;
+        if (first->curr > diff_ms) {
+            first->curr -= diff_ms;
+            diff_ms = 0;
+            break;
+        }
 
-        timer->proc(timer, timer->arg);
-        if ((timer->flags & NET_TIMER_RELOAD) != 0 &&
-            !timer_is_scheduled(timer)) {
-            timer->curr = timer->reload;
-            insert_timer(timer);
+        diff_ms -= first->curr;
+        while ((node = nlist_first(&timer_list)) != 0) {
+            net_timer_t *timer = nlist_entry(node, net_timer_t, node);
+            if (timer->curr != 0)
+                break;
+            nlist_remove(&timer_list, node);
+            nlist_insert_last(&wait_list, node);
+        }
+        while ((node = nlist_remove_first(&wait_list)) != 0) {
+            net_timer_t *timer = nlist_entry(node, net_timer_t, node);
+
+            timer->proc(timer, timer->arg);
+            if ((timer->flags & NET_TIMER_RELOAD) != 0 &&
+                !timer_is_scheduled(timer)) {
+                timer->curr = timer->reload;
+                insert_timer(timer);
+            }
         }
     }
     pending_timers = pending.previous;

@@ -21,7 +21,7 @@ static net_err_t ether_link_open(netif_t *netif)
 
 static void ether_link_close(netif_t *netif)
 {
-    (void)netif;
+    arp_clear(netif);
 }
 
 static net_err_t ether_link_in(netif_t *netif, pktbuf_t *buf)
