@@ -1,4 +1,4 @@
-.PHONY: check-env deps check-sources test-host m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke
+.PHONY: check-env deps check-sources test-host m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke
 
 check-env:
 	./scripts/check-env.sh
@@ -51,6 +51,7 @@ test-host:
 	./tests/host/test_m6b_syscall.sh
 	./tests/host/test_m6b_contracts.sh
 	./tests/host/test_m6b_smoke_script.sh
+	./tests/host/test_m6c1_contracts.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
@@ -114,3 +115,9 @@ m6b-build: check-env check-sources
 
 m6b-smoke:
 	./scripts/m6b-smoke.sh
+
+m6c1-build: check-env check-sources
+	./scripts/m6c1-build.sh
+
+m6c1-smoke:
+	./scripts/m6c1-smoke.sh
