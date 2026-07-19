@@ -52,6 +52,8 @@ static void test_tcp_checksum(void)
     header->window = x_htons(4096);
     header->checksum = 0;
     header->urgent = 0;
+    assert(tcp_checksum(packet, 0, &dest, TCP_HEADER_SIZE) == 0);
+    assert(tcp_checksum(packet, &src, 0, TCP_HEADER_SIZE) == 0);
     assert(tcp_checksum(packet, &src, &dest, TCP_HEADER_SIZE) == 0xa7f2);
     pktbuf_free(packet);
 }
