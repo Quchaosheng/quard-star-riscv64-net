@@ -1,6 +1,8 @@
 #include <timeros/string.h>
 #include <timeros/syscall.h>
 
+#define TEST_SOCKET_COUNT 16
+
 static uint16_t net_port(uint16_t value)
 {
     return (uint16_t)((value << 8) | (value >> 8));
@@ -20,8 +22,16 @@ int main(void)
         .port = net_port(4700),
         .address = 0xc0a86401U,
     };
-    int fd = sys_socket(NET_AF_INET, NET_SOCK_DGRAM, 0);
-    if (fd < 0 || sys_bind(fd, &local, sizeof(local)) < 0 ||
+    int sockets[TEST_SOCKET_COUNT];
+    for (int i = 0; i < TEST_SOCKET_COUNT; i++) {
+        sockets[i] = sys_socket(NET_AF_INET, NET_SOCK_DGRAM, 0);
+        if (sockets[i] < 0) {
+            printf("QS:TEST_FAIL:m6b-socket-capacity\n");
+            return -1;
+        }
+    }
+    int fd = sockets[0];
+    if (sys_bind(fd, &local, sizeof(local)) < 0 ||
         sys_sendto(fd, payload, sizeof(payload) - 1, 0,
                    &peer, sizeof(peer)) != (int)sizeof(payload) - 1) {
         printf("QS:TEST_FAIL:m6b-udp-send\n");
@@ -42,8 +52,10 @@ int main(void)
         return -1;
     }
     printf("QS:M6B_UDP_TIMEOUT_OK\n");
-    if (sys_close(fd) < 0)
-        return -1;
+    for (int i = 0; i < TEST_SOCKET_COUNT; i++) {
+        if (sys_close(sockets[i]) < 0)
+            return -1;
+    }
     while (1)
         sys_yield();
 }
