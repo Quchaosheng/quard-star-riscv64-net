@@ -13,7 +13,7 @@ require()
 {
   pattern=$1
   file=$2
-  rg -q -- "$pattern" "$root/$file" || fail "$file missing $pattern"
+  grep -Eq -- "$pattern" "$root/$file" || fail "$file missing $pattern"
 }
 
 require '^m6a-build:' Makefile
@@ -30,7 +30,7 @@ require 'm5-smoke\.sh' scripts/m6a-smoke.sh
 stack=$root/kernel/src/net/net_stack.c
 init=$(sed -n '/net_err_t net_stack_init(void)/,/^}/p' "$stack")
 worker=$(sed -n '/void net_stack_worker(void \*arg)/,/^}/p' "$stack")
-line_of() { printf '%s\n' "$init" | rg -n "$1" | head -n 1 | cut -d: -f1; }
+line_of() { printf '%s\n' "$init" | grep -En -- "$1" | head -n 1 | cut -d: -f1; }
 net_sys_line=$(line_of 'net_sys_init')
 pktbuf_line=$(line_of 'pktbuf_init')
 timer_line=$(line_of 'net_timer_init')
@@ -41,11 +41,11 @@ open_line=$(line_of 'netif_open\("eth0"')
 [ "$pktbuf_line" -lt "$timer_line" ] || fail 'net_timer_init must follow pktbuf_init'
 [ "$timer_line" -lt "$netif_line" ] || fail 'net_timer_init must precede netif_init'
 [ "$loop_line" -lt "$open_line" ] || fail 'loop_init must precede opening eth0'
-printf '%s\n' "$worker" | rg -q 'sys_time_curr' || fail 'worker must establish timer baseline'
-printf '%s\n' "$worker" | rg -q 'sys_time_goes' || fail 'worker must advance time'
-printf '%s\n' "$worker" | rg -q 'net_timer_check_tmo' || fail 'worker must run shared timers'
-printf '%s\n' "$worker" | rg -q 'net_timer_first_tmo' || fail 'worker poll must be timer bounded'
-printf '%s\n' "$worker" | rg -q 'net_stack_process_input' || fail 'worker must drain loop input'
+printf '%s\n' "$worker" | grep -q 'sys_time_curr' || fail 'worker must establish timer baseline'
+printf '%s\n' "$worker" | grep -q 'sys_time_goes' || fail 'worker must advance time'
+printf '%s\n' "$worker" | grep -q 'net_timer_check_tmo' || fail 'worker must run shared timers'
+printf '%s\n' "$worker" | grep -q 'net_timer_first_tmo' || fail 'worker poll must be timer bounded'
+printf '%s\n' "$worker" | grep -q 'net_stack_process_input' || fail 'worker must drain loop input'
 
 require 'fixq_init' kernel/src/net/net_stack.c
 require 'fixq_send' kernel/src/net/net_stack.c
@@ -60,7 +60,7 @@ require 'QS:M6_QUEUE_OK' kernel/src/net/net_stack.c
 require 'QS:M6_LOOP_OK' kernel/src/net/net_stack.c
 require 'QS:M6_ARP_TIMER_OK' kernel/src/net/arp.c
 arp_callback=$(sed -n '/static void arp_cache_tmo/,/^}/p' "$root/kernel/src/net/arp.c")
-printf '%s\n' "$arp_callback" | rg -q 'QS:M6_ARP_TIMER_OK' || \
+printf '%s\n' "$arp_callback" | grep -q 'QS:M6_ARP_TIMER_OK' || \
   fail 'ARP marker must be emitted by arp_cache_tmo'
 require 'm6_mark_queue' kernel/include/timeros/selftest.h
 require 'm6_mark_arp_timer' kernel/include/timeros/selftest.h
