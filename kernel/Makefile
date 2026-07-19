@@ -61,6 +61,7 @@ NET_SRCS_C = \
 	net/loop.c \
 	net/net_stack.c \
 	net/udp.c \
+	net/tcp.c \
 	net/net_exec.c \
 	net/socket.c \
 
