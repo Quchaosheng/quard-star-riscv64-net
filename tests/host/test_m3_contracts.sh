@@ -84,7 +84,7 @@ require_order kernel/src/task.c \
   'spin_unlock(&task_lock);' 'virtio_disk_smoke_test();' \
   'the init task must drop task_lock before block I/O'
 require_text kernel/src/task.c \
-  'if (current_proc()->pid == 0)' 'only init may run the pre-user block smoke'
+  'if (task->pid == 0)' 'only init may run the pre-user block smoke'
 require_text kernel/src/bio.c \
   'struct sleeplock lock;' 'buffer-cache metadata needs a sleeping lock'
 require_text kernel/include/timeros/bio.h \
