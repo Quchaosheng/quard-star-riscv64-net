@@ -11,7 +11,9 @@
 #include <timeros/net/net_sys.h>
 #include <timeros/net/netif_virtio.h>
 #include <timeros/net/pktbuf.h>
+#include <timeros/net/socket.h>
 #include <timeros/net/timer.h>
+#include <timeros/net/udp.h>
 
 #ifdef QS_M5_TEST
 #include <timeros/memory.h>
@@ -197,6 +199,12 @@ net_err_t net_stack_init(void)
     if (err < 0)
         return err;
     err = icmpv4_init();
+    if (err < 0)
+        return err;
+    err = udp_init();
+    if (err < 0)
+        return err;
+    err = net_socket_init();
     if (err < 0)
         return err;
     err = loop_init();
