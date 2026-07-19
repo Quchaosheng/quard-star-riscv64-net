@@ -13,6 +13,8 @@ grep -q 'sys_sendto' "$root/user/udp_echo.c" || fail 'guest must send UDP'
 grep -q 'sys_recvfrom' "$root/user/udp_echo.c" || fail 'guest must receive UDP'
 grep -q 'QS:M6B_UDP_OK' "$root/user/udp_echo.c" || fail 'missing UDP marker'
 grep -q 'QS:M6B_UDP_TIMEOUT_OK' "$root/user/udp_echo.c" || fail 'missing timeout marker'
+grep -q 'TEST_SOCKET_COUNT 16' "$root/user/udp_echo.c" || \
+  fail 'guest must exercise all 16 target socket slots'
 grep -q 'QS:TEST_PASS:m6b-smoke' "$root/kernel/src/selftest.c" || \
   fail 'missing M6B pass marker'
 grep -q 'sys_write(stdout,out_buf,res);' "$root/kernel/lib/printf.c" || \
