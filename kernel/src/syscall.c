@@ -7,6 +7,7 @@
 #include <timeros/net/net_exec.h>
 #include <timeros/net/net_stack.h>
 #include <timeros/net/socket.h>
+#include <timeros/net/tools.h>
 
 static int copy_from_user(void *dst, const char *src, size_t len);
 
