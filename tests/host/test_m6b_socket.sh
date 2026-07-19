@@ -16,6 +16,13 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/mblock.c" \
   "$root/kernel/src/net/fixq.c" \
   "$root/kernel/src/net/pktbuf.c" \
+  "$root/kernel/src/net/ipaddr.c" \
+  "$root/kernel/src/net/netif.c" \
+  "$root/kernel/src/net/tools.c" \
+  "$root/kernel/src/net/ether.c" \
+  "$root/kernel/src/net/arp.c" \
+  "$root/kernel/src/net/ipv4.c" \
+  "$root/kernel/src/net/timer.c" \
   "$root/kernel/src/net/udp.c" \
   "$root/kernel/src/net/socket.c" \
   -o "$tmp/test_m6b_socket"
