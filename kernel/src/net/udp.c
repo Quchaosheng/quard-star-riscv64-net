@@ -66,6 +66,13 @@ net_err_t udp_open(udp_pcb_t *pcb)
                                       UDP_RECV_MAX, NLOCKER_THREAD);
             if (err < 0)
                 return err;
+            nlocker_init(&pcb->state_locker, NLOCKER_THREAD);
+            pcb->close_done = sys_sem_create(0);
+            if (pcb->close_done == SYS_SEM_INVALID) {
+                fixq_destroy(&pcb->recv_queue);
+                return NET_ERR_MEM;
+            }
+            pcb->recv_waiting = 0;
             pcbs[i] = pcb;
             return NET_ERR_OK;
         }
@@ -92,13 +99,26 @@ net_err_t udp_close(udp_pcb_t *pcb)
 
     if (slot < 0 || pcb == 0 || !pcb->open)
         return NET_ERR_PARAM;
+    nlocker_lock(&pcb->state_locker);
     pcb->open = 0;
-    udp_recv_t *record;
-    while ((record = fixq_recv(&pcb->recv_queue, -1)) != 0) {
+    int waiting = pcb->recv_waiting;
+    nlocker_unlock(&pcb->state_locker);
+    if (waiting) {
+        if (fixq_send(&pcb->recv_queue, pcb, -1) < 0)
+            return NET_ERR_FULL;
+        (void)sys_sem_wait(pcb->close_done, 0);
+    }
+    void *item;
+    while ((item = fixq_recv(&pcb->recv_queue, -1)) != 0) {
+        if (item == pcb)
+            continue;
+        udp_recv_t *record = item;
         pktbuf_free(record->buf);
         record->buf = 0;
     }
     fixq_destroy(&pcb->recv_queue);
+    sys_sem_free(pcb->close_done);
+    nlocker_destroy(&pcb->state_locker);
     pcb->local_port = 0;
     pcbs[slot] = 0;
     return NET_ERR_OK;
@@ -173,9 +193,30 @@ net_err_t udp_in(netif_t *netif, const ipaddr_t *src,
 int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
                  uint16_t *src_port, int timeout_ms)
 {
-    if (pcb == 0 || !pcb->open || data == 0 || size < 0)
+    if (pcb == 0 || data == 0 || size < 0)
         return NET_ERR_PARAM;
-    udp_recv_t *record = fixq_recv(&pcb->recv_queue, timeout_ms);
+    nlocker_lock(&pcb->state_locker);
+    if (!pcb->open || pcb->recv_waiting) {
+        nlocker_unlock(&pcb->state_locker);
+        return NET_ERR_STATE;
+    }
+    pcb->recv_waiting = 1;
+    nlocker_unlock(&pcb->state_locker);
+    void *item = fixq_recv(&pcb->recv_queue, timeout_ms);
+    nlocker_lock(&pcb->state_locker);
+    pcb->recv_waiting = 0;
+    int closed = !pcb->open;
+    nlocker_unlock(&pcb->state_locker);
+    if (closed) {
+        if (item != 0 && item != pcb) {
+            udp_recv_t *record = item;
+            pktbuf_free(record->buf);
+            record->buf = 0;
+        }
+        sys_sem_notify(pcb->close_done);
+        return NET_ERR_STATE;
+    }
+    udp_recv_t *record = item;
     if (record == 0)
         return timeout_ms < 0 ? NET_ERR_NONE : NET_ERR_TMO;
     if (pktbuf_remove_header(record->buf, UDP_HEADER_SIZE) < 0) {

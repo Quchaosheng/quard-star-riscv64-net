@@ -1,5 +1,7 @@
 #include <assert.h>
+#include <pthread.h>
 #include <stdint.h>
+#include <sched.h>
 
 #include <timeros/net/net_sys.h>
 #include <timeros/net/ether.h>
@@ -10,6 +12,18 @@
 #include <timeros/net/tools.h>
 #include <timeros/net/udp.h>
 
+static int close_wait_started;
+static int close_wait_result;
+
+static void *close_wait_thread(void *arg)
+{
+    udp_pcb_t *pcb = arg;
+    uint8_t byte;
+
+    __atomic_store_n(&close_wait_started, 1, __ATOMIC_RELEASE);
+    close_wait_result = udp_recvfrom(pcb, &byte, 1, 0, 0, 0);
+    return 0;
+}
 static void test_udp_header_validation(void)
 {
     udp_hdr_t header = { 0 };
@@ -112,11 +126,28 @@ static void test_udp_rejects_bad_checksum(void)
     assert(netif_close(loop) == NET_ERR_OK);
 }
 
+static void test_udp_close_wakes_receiver(void)
+{
+    pthread_t thread;
+    udp_pcb_t pcb;
+
+    assert(udp_open(&pcb) == NET_ERR_OK);
+    assert(udp_bind(&pcb, 4500) == NET_ERR_OK);
+    close_wait_started = 0;
+    assert(pthread_create(&thread, 0, close_wait_thread, &pcb) == 0);
+    while (!__atomic_load_n(&close_wait_started, __ATOMIC_ACQUIRE))
+        sched_yield();
+    assert(udp_close(&pcb) == NET_ERR_OK);
+    assert(pthread_join(thread, 0) == 0);
+    assert(close_wait_result == NET_ERR_STATE);
+}
+
 int main(void)
 {
     test_udp_header_validation();
     test_udp_bind_conflict_and_close();
     test_udp_loopback_send_receive();
     test_udp_rejects_bad_checksum();
+    test_udp_close_wakes_receiver();
     return 0;
 }
