@@ -82,6 +82,7 @@ endif
 all: build_app os.elf
 
 link_app.o: build_app
+	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -c -o $@ $(SRC)/link_app.S
 
 os.elf: ${OBJS}
 	${CC} ${CFLAGS} -T os.ld -Wl,-Map=os.map -o os.elf $^
