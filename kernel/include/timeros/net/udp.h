@@ -24,6 +24,9 @@ typedef struct _udp_pcb_t {
     int open;
     fixq_t recv_queue;
     void *recv_slots[UDP_RECV_MAX];
+    nlocker_t state_locker;
+    sys_sem_t close_done;
+    int recv_waiting;
 } udp_pcb_t;
 
 net_err_t udp_init(void);
