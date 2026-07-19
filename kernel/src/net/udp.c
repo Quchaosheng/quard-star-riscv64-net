@@ -1,14 +1,48 @@
 #include <timeros/net/udp.h>
 
 #include <timeros/net/net_port.h>
+#include <timeros/net/ipv4.h>
+#include <timeros/net/pktbuf.h>
+#include <timeros/net/protocol.h>
 #include <timeros/net/tools.h>
+
+typedef struct _udp_recv_t {
+    pktbuf_t *buf;
+    ipaddr_t src;
+    uint16_t port;
+} udp_recv_t;
+
+static udp_recv_t recv_records[UDP_PCB_MAX][UDP_RECV_MAX];
+
+typedef struct __attribute__((packed)) _udp_pseudo_t {
+    uint8_t src[IPV4_ADDR_SIZE];
+    uint8_t dest[IPV4_ADDR_SIZE];
+    uint8_t zero;
+    uint8_t protocol;
+    uint16_t length;
+} udp_pseudo_t;
+
+static uint16_t udp_checksum(pktbuf_t *buf, const ipaddr_t *src,
+                             const ipaddr_t *dest, uint16_t length)
+{
+    udp_pseudo_t pseudo;
+
+    ipaddr_to_buf(src, pseudo.src);
+    ipaddr_to_buf(dest, pseudo.dest);
+    pseudo.zero = 0;
+    pseudo.protocol = NET_PROTOCOL_UDP;
+    pseudo.length = x_htons(length);
+    uint32_t sum = checksum16(0, &pseudo, sizeof(pseudo), 0, 0);
+    pktbuf_reset_acc(buf);
+    return pktbuf_checksum16(buf, length, sum, 1);
+}
 
 static udp_pcb_t *pcbs[UDP_PCB_MAX];
 
 net_err_t udp_init(void)
 {
     plat_memset(pcbs, 0, sizeof(pcbs));
-    return NET_ERR_OK;
+    return ipv4_register_handler(NET_PROTOCOL_UDP, udp_in);
 }
 
 static int udp_find_slot(udp_pcb_t *pcb)
@@ -28,6 +62,10 @@ net_err_t udp_open(udp_pcb_t *pcb)
         if (pcbs[i] == 0) {
             pcb->local_port = 0;
             pcb->open = 1;
+            net_err_t err = fixq_init(&pcb->recv_queue, pcb->recv_slots,
+                                      UDP_RECV_MAX, NLOCKER_THREAD);
+            if (err < 0)
+                return err;
             pcbs[i] = pcb;
             return NET_ERR_OK;
         }
@@ -55,9 +93,109 @@ net_err_t udp_close(udp_pcb_t *pcb)
     if (slot < 0 || pcb == 0 || !pcb->open)
         return NET_ERR_PARAM;
     pcb->open = 0;
+    udp_recv_t *record;
+    while ((record = fixq_recv(&pcb->recv_queue, -1)) != 0) {
+        pktbuf_free(record->buf);
+        record->buf = 0;
+    }
+    fixq_destroy(&pcb->recv_queue);
     pcb->local_port = 0;
     pcbs[slot] = 0;
     return NET_ERR_OK;
+}
+
+net_err_t udp_sendto(udp_pcb_t *pcb, netif_t *netif, const ipaddr_t *dest,
+                     uint16_t dest_port, const uint8_t *data, int size)
+{
+    if (pcb == 0 || !pcb->open || netif == 0 || dest == 0 ||
+        dest_port == 0 || size < 0 || (size != 0 && data == 0))
+        return NET_ERR_PARAM;
+    pktbuf_t *buf = pktbuf_alloc(UDP_HEADER_SIZE + size);
+    if (buf == 0)
+        return NET_ERR_MEM;
+    udp_hdr_t *header = (udp_hdr_t *)pktbuf_data(buf);
+    header->src_port = x_htons(pcb->local_port);
+    header->dest_port = x_htons(dest_port);
+    header->total_len = x_htons((uint16_t)(UDP_HEADER_SIZE + size));
+    header->checksum = 0;
+    if (size > 0) {
+        pktbuf_reset_acc(buf);
+        if (pktbuf_seek(buf, UDP_HEADER_SIZE) < 0 ||
+            pktbuf_write(buf, data, size) < 0) {
+            pktbuf_free(buf);
+            return NET_ERR_SIZE;
+        }
+    }
+    header = (udp_hdr_t *)pktbuf_data(buf);
+    uint16_t checksum = udp_checksum(buf, &netif->ipaddr, dest,
+                                     (uint16_t)(UDP_HEADER_SIZE + size));
+    header->checksum = x_htons(checksum == 0 ? 0xffffU : checksum);
+    return ipv4_out(netif, dest, NET_PROTOCOL_UDP, buf);
+}
+
+net_err_t udp_in(netif_t *netif, const ipaddr_t *src,
+                 const ipaddr_t *dest, pktbuf_t *buf)
+{
+    (void)netif;
+    (void)dest;
+    if (src == 0 || buf == 0 || pktbuf_set_cont(buf, UDP_HEADER_SIZE) < 0)
+        return NET_ERR_SIZE;
+    udp_hdr_t *header = (udp_hdr_t *)pktbuf_data(buf);
+    net_err_t err = udp_header_check(header, pktbuf_total(buf));
+    if (err < 0)
+        return err;
+    uint16_t length = x_ntohs(header->total_len);
+    if (header->checksum != 0 && udp_checksum(buf, src, dest, length) != 0)
+        return NET_ERR_CHKSUM;
+    uint16_t port = x_ntohs(header->dest_port);
+    for (int i = 0; i < UDP_PCB_MAX; i++) {
+        udp_pcb_t *pcb = pcbs[i];
+        if (pcb == 0 || !pcb->open || pcb->local_port != port)
+            continue;
+        for (int j = 0; j < UDP_RECV_MAX; j++) {
+            udp_recv_t *record = &recv_records[i][j];
+            if (record->buf != 0)
+                continue;
+            record->buf = buf;
+            record->src = *src;
+            record->port = x_ntohs(header->src_port);
+            if (fixq_send(&pcb->recv_queue, record, -1) < 0) {
+                record->buf = 0;
+                return NET_ERR_FULL;
+            }
+            return NET_ERR_OK;
+        }
+        return NET_ERR_FULL;
+    }
+    return NET_ERR_UNREACH;
+}
+
+int udp_recvfrom(udp_pcb_t *pcb, uint8_t *data, int size, ipaddr_t *src,
+                 uint16_t *src_port, int timeout_ms)
+{
+    if (pcb == 0 || !pcb->open || data == 0 || size < 0)
+        return NET_ERR_PARAM;
+    udp_recv_t *record = fixq_recv(&pcb->recv_queue, timeout_ms);
+    if (record == 0)
+        return timeout_ms < 0 ? NET_ERR_NONE : NET_ERR_TMO;
+    if (pktbuf_remove_header(record->buf, UDP_HEADER_SIZE) < 0) {
+        pktbuf_free(record->buf);
+        record->buf = 0;
+        return NET_ERR_SIZE;
+    }
+    int copied = pktbuf_total(record->buf);
+    if (copied > size)
+        copied = size;
+    pktbuf_reset_acc(record->buf);
+    if (pktbuf_read(record->buf, data, copied) < 0)
+        copied = NET_ERR_SIZE;
+    if (src != 0)
+        *src = record->src;
+    if (src_port != 0)
+        *src_port = record->port;
+    pktbuf_free(record->buf);
+    record->buf = 0;
+    return copied;
 }
 
 net_err_t udp_header_check(const udp_hdr_t *header, int size)
