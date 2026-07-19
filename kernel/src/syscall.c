@@ -275,7 +275,18 @@ static int __sys_recvfrom(int handle, const net_recvfrom_args *user_args)
                                      &source, &source_port,
                                      args.timeout_ms);
     if (result < 0)
+#ifdef QS_M6B_TEST
+    {
+        if (result == NET_ERR_TMO)
+            m6b_mark_udp_timeout();
         return result;
+    }
+#else
+        return result;
+#endif
+#ifdef QS_M6B_TEST
+    m6b_mark_udp();
+#endif
     if (copy_to_user(args.data, data, (size_t)result) < 0)
         return NET_ERR_PARAM;
     if (args.address != 0 || args.address_length != 0) {

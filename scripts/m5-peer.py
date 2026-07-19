@@ -18,6 +18,9 @@ ARP_REQUEST = 1
 ARP_REPLY = 2
 ICMP_ECHO_REPLY = 0
 ICMP_ECHO_REQUEST = 8
+IPPROTO_UDP = 17
+GUEST_UDP_PORT = 4600
+HOST_UDP_PORT = 4700
 GUEST_MAC = bytes.fromhex("525400123456")
 HOST_MAC = bytes.fromhex("525400123457")
 GUEST_IP = bytes((192, 168, 100, 2))
@@ -153,6 +156,50 @@ def decode_icmp_echo(frame: bytes):
     }
 
 
+def decode_udp(frame: bytes):
+    if len(frame) < ETHERNET_HEADER_SIZE + 28:
+        return None
+    if struct.unpack_from("!H", frame, 12)[0] != ETHERTYPE_IPV4:
+        return None
+    ip_offset = ETHERNET_HEADER_SIZE
+    ihl = (frame[ip_offset] & 0x0F) * 4
+    total_length = struct.unpack_from("!H", frame, ip_offset + 2)[0]
+    if frame[ip_offset] >> 4 != 4 or ihl < 20 or \
+            total_length < ihl + 8 or len(frame) < ip_offset + total_length:
+        return None
+    ip_header = frame[ip_offset:ip_offset + ihl]
+    if checksum16(ip_header) != 0 or ip_header[9] != IPPROTO_UDP:
+        return None
+    src_ip, dst_ip = ip_header[12:16], ip_header[16:20]
+    udp_offset = ip_offset + ihl
+    src_port, dst_port, udp_length, udp_checksum = struct.unpack_from(
+        "!HHHH", frame, udp_offset)
+    if udp_length < 8 or udp_offset + udp_length > ip_offset + total_length:
+        return None
+    udp = frame[udp_offset:udp_offset + udp_length]
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_UDP)) + \
+        struct.pack("!H", udp_length)
+    if udp_checksum != 0 and checksum16(pseudo + udp) != 0:
+        return None
+    return src_ip, dst_ip, src_port, dst_port, udp[8:]
+
+
+def encode_udp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
+               dst_ip: bytes, src_port: int, dst_port: int,
+               payload: bytes) -> bytes:
+    udp_length = 8 + len(payload)
+    udp = struct.pack("!HHHH", src_port, dst_port, udp_length, 0) + payload
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_UDP)) + \
+        struct.pack("!H", udp_length)
+    udp_checksum = checksum16(pseudo + udp) or 0xFFFF
+    udp = udp[:6] + struct.pack("!H", udp_checksum) + udp[8:]
+    total_length = 20 + udp_length
+    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, total_length, 2, 0x4000,
+                     64, IPPROTO_UDP, 0, src_ip, dst_ip)
+    ip = ip[:10] + struct.pack("!H", checksum16(ip)) + ip[12:]
+    return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + udp)
+
+
 def payload_checksum(payload: bytes) -> int:
     return sum(payload) & 0xFFFFFFFF
 
@@ -191,7 +238,8 @@ def write_stats(path: str | None, stats: dict, elapsed: float) -> None:
 
 
 def run_peer(interface: str, raw_count: int, timeout: float,
-             ready_file: str | None, stats_file: str | None) -> int:
+             ready_file: str | None, stats_file: str | None,
+             require_udp: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -202,6 +250,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "guest_echo_replies": 0,
         "host_echo_requests": 0,
         "host_echo_replies": 0,
+        "udp_requests": 0,
+        "udp_replies": 0,
     }
     expected_raw = 0
     host_arp_request_sent = False
@@ -215,7 +265,11 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             stats["guest_echo_requests"] >= 1 and
             stats["guest_echo_replies"] >= 1 and
             stats["host_echo_requests"] >= 1 and
-            stats["host_echo_replies"] >= 1
+            stats["host_echo_replies"] >= 1 and
+            (not require_udp or (
+                stats["udp_requests"] >= 1 and
+                stats["udp_replies"] >= 1
+            ))
         )
 
     with socket.socket(socket.AF_PACKET, socket.SOCK_RAW,
@@ -269,6 +323,15 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             if ethertype != ETHERTYPE_IPV4:
                 continue
             event = decode_icmp_echo(frame)
+            udp = decode_udp(frame)
+            if udp is not None and udp[0] == GUEST_IP and \
+                    udp[1] == HOST_IP and udp[2] == GUEST_UDP_PORT and \
+                    udp[3] == HOST_UDP_PORT:
+                stats["udp_requests"] += 1
+                peer.send(encode_udp(HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                                     HOST_UDP_PORT, GUEST_UDP_PORT, udp[4]))
+                stats["udp_replies"] += 1
+                continue
             if event is None:
                 continue
             if event["src_mac"] == GUEST_MAC and \
@@ -308,13 +371,14 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--ready-file")
     parser.add_argument("--stats-file")
+    parser.add_argument("--require-udp", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
 
     try:
         return run_peer(args.interface, args.raw_count, args.timeout,
-                        args.ready_file, args.stats_file)
+                        args.ready_file, args.stats_file, args.require_udp)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1

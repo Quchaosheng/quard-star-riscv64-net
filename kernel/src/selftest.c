@@ -36,6 +36,10 @@
 #define M6_LOOP_DONE      (1U << 19)
 #define M6A_ALL_DONE      (M5_ALL_DONE | M6_QUEUE_DONE | \
                            M6_ARP_TIMER_DONE | M6_LOOP_DONE)
+#define M6B_UDP_DONE         (1U << 20)
+#define M6B_UDP_TIMEOUT_DONE (1U << 21)
+#define M6B_ALL_DONE         (M6A_ALL_DONE | M6B_UDP_DONE | \
+                              M6B_UDP_TIMEOUT_DONE)
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -124,6 +128,9 @@ void m6_mark_queue(void) { m6_mark(M6_QUEUE_DONE); }
 void m6_mark_arp_timer(void) { m6_mark(M6_ARP_TIMER_DONE); }
 void m6_mark_loop(void) { m6_mark(M6_LOOP_DONE); }
 
+void m6b_mark_udp(void) { mark(M6B_UDP_DONE); }
+void m6b_mark_udp_timeout(void) { mark(M6B_UDP_TIMEOUT_DONE); }
+
 void m2c_selftest_poll(void)
 {
 #ifdef QS_M2C_TEST
@@ -140,6 +147,9 @@ void m2c_selftest_poll(void)
 #ifdef QS_M6A_TEST
     required = M6A_ALL_DONE;
 #endif
+#ifdef QS_M6B_TEST
+    required = M6B_ALL_DONE;
+#endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
 
@@ -150,7 +160,9 @@ void m2c_selftest_poll(void)
         return;
 
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
-#ifdef QS_M6A_TEST
+#ifdef QS_M6B_TEST
+    printk("QS:TEST_PASS:m6b-smoke\n");
+#elif defined(QS_M6A_TEST)
     printk("QS:TEST_PASS:m6a-smoke\n");
 #elif defined(QS_M4_STRESS)
     printk("QS:TEST_PASS:m4-stress\n");
