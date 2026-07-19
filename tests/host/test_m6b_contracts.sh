@@ -15,5 +15,9 @@ grep -q 'QS:M6B_UDP_OK' "$root/user/udp_echo.c" || fail 'missing UDP marker'
 grep -q 'QS:M6B_UDP_TIMEOUT_OK' "$root/user/udp_echo.c" || fail 'missing timeout marker'
 grep -q 'QS:TEST_PASS:m6b-smoke' "$root/kernel/src/selftest.c" || \
   fail 'missing M6B pass marker'
+grep -q 'sys_write(stdout,out_buf,res);' "$root/kernel/lib/printf.c" || \
+  fail 'user printf must not write the string terminator'
+grep -q 'TAP ARP/ICMP/UDP acceptance' "$root/scripts/m5-smoke.sh" || \
+  fail 'M6B result must describe UDP acceptance'
 
 echo 'PASS: M6B source and build contracts'
