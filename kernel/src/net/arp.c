@@ -108,7 +108,7 @@ static void arp_cache_tmo(net_timer_t *timer, void *arg)
     static int reported;
     if (!reported) {
         reported = 1;
-        printk("QS:M6_ARP_TIMER_OK\n");
+        printk("\nQS:M6_ARP_TIMER_OK\n");
         m6_mark_arp_timer();
     }
 #endif
