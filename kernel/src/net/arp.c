@@ -363,7 +363,7 @@ net_err_t arp_resolve(netif_t *netif, const ipaddr_t *ipaddr,
 
 void arp_clear(netif_t *netif)
 {
-    if (netif == 0)
+    if (!initialized || netif == 0)
         return;
     nlist_node_t *node = nlist_first(&cache_list);
     while (node != 0) {
