@@ -14,6 +14,24 @@
 
 static int close_wait_started;
 static int close_wait_result;
+static int pause_receiver;
+static int receiver_acquired;
+static int close_marked;
+static int close_result;
+
+void udp_test_recv_acquired_hook(void)
+{
+    if (!__atomic_load_n(&pause_receiver, __ATOMIC_ACQUIRE))
+        return;
+    __atomic_store_n(&receiver_acquired, 1, __ATOMIC_RELEASE);
+    while (__atomic_load_n(&pause_receiver, __ATOMIC_ACQUIRE))
+        sched_yield();
+}
+
+void udp_test_close_marked_hook(void)
+{
+    __atomic_store_n(&close_marked, 1, __ATOMIC_RELEASE);
+}
 
 static void *close_wait_thread(void *arg)
 {
@@ -22,6 +40,12 @@ static void *close_wait_thread(void *arg)
 
     __atomic_store_n(&close_wait_started, 1, __ATOMIC_RELEASE);
     close_wait_result = udp_recvfrom(pcb, &byte, 1, 0, 0, 0);
+    return 0;
+}
+
+static void *udp_close_thread(void *arg)
+{
+    close_result = udp_close(arg);
     return 0;
 }
 static void test_udp_header_validation(void)
@@ -145,6 +169,7 @@ static void test_udp_close_wakes_receiver(void)
 static void test_udp_close_wakes_receiver_with_full_queue(void)
 {
     pthread_t thread;
+    pthread_t closer;
     udp_pcb_t sender;
     udp_pcb_t receiver;
 
@@ -158,6 +183,13 @@ static void test_udp_close_wakes_receiver_with_full_queue(void)
     assert(udp_bind(&sender, 4510) == NET_ERR_OK);
     assert(udp_bind(&receiver, 4520) == NET_ERR_OK);
     netif_t *loop = loop_get_netif();
+    pause_receiver = 1;
+    receiver_acquired = 0;
+    close_marked = 0;
+    close_wait_started = 0;
+    assert(pthread_create(&thread, 0, close_wait_thread, &receiver) == 0);
+    while (!__atomic_load_n(&receiver_acquired, __ATOMIC_ACQUIRE))
+        sched_yield();
     for (int i = 0; i < UDP_RECV_MAX; i++) {
         uint8_t byte = (uint8_t)i;
         assert(udp_sendto(&sender, loop, &loop->ipaddr, 4520,
@@ -166,11 +198,12 @@ static void test_udp_close_wakes_receiver_with_full_queue(void)
         assert(packet != 0);
         assert(ipv4_in(loop, packet) == NET_ERR_OK);
     }
-    close_wait_started = 0;
-    assert(pthread_create(&thread, 0, close_wait_thread, &receiver) == 0);
-    while (!__atomic_load_n(&close_wait_started, __ATOMIC_ACQUIRE))
+    assert(pthread_create(&closer, 0, udp_close_thread, &receiver) == 0);
+    while (!__atomic_load_n(&close_marked, __ATOMIC_ACQUIRE))
         sched_yield();
-    assert(udp_close(&receiver) == NET_ERR_OK);
+    __atomic_store_n(&pause_receiver, 0, __ATOMIC_RELEASE);
+    assert(pthread_join(closer, 0) == 0);
+    assert(close_result == NET_ERR_OK);
     assert(pthread_join(thread, 0) == 0);
     assert(close_wait_result == NET_ERR_STATE);
     assert(udp_close(&sender) == NET_ERR_OK);
