@@ -6,7 +6,7 @@ static int vprintf(const char* s, va_list vl)
 {
 	int res = _vsnprintf(NULL, -1, s, vl);
 	_vsnprintf(out_buf, res + 1, s, vl);
-	sys_write(stdout,out_buf,res + 1);
+	sys_write(stdout,out_buf,res);
 	return res;
 }
 

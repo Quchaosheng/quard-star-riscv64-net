@@ -168,4 +168,8 @@ then
   exit 1
 fi
 
-echo "PASS: $test_name TAP ARP/ICMP acceptance"
+if [ "$test_name" = m6b-smoke ]; then
+  echo "PASS: $test_name TAP ARP/ICMP/UDP acceptance"
+else
+  echo "PASS: $test_name TAP ARP/ICMP acceptance"
+fi
