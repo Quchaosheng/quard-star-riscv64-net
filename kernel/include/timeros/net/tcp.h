@@ -18,6 +18,7 @@
 #define TCP_MSS 512
 #define TCP_RETRANS_MS 500
 #define TCP_RETRY_MAX 5
+#define TCP_TIME_WAIT_MS 1000
 
 #define TCP_FLAG_FIN 0x01
 #define TCP_FLAG_SYN 0x02
@@ -64,10 +65,16 @@ typedef struct _tcp_pcb_t {
     uint32_t outstanding_end;
     int retry_count;
     net_timer_t retrans_timer;
+    net_timer_t time_wait_timer;
     uint8_t recv_storage[TCP_RECV_MAX];
     int recv_head;
     int recv_count;
     nlocker_t recv_locker;
+    nlocker_t state_locker;
+    int connect_waiters;
+    int recv_waiters;
+    int close_waiters;
+    int release_pending;
     sys_sem_t connect_done;
     sys_sem_t recv_done;
     sys_sem_t close_done;
@@ -84,6 +91,9 @@ int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
                    int timeout_ms);
 net_err_t tcp_retransmit_due(tcp_pcb_t *pcb);
 net_err_t tcp_close(tcp_pcb_t *pcb);
+/* Completion waits track PCB lifetime; callers must not wait on sem fields. */
+net_err_t tcp_wait_connect(tcp_pcb_t *pcb, int timeout_ms);
+net_err_t tcp_wait_close(tcp_pcb_t *pcb, int timeout_ms);
 net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
                  const ipaddr_t *dest, pktbuf_t *buf);
 net_err_t tcp_header_check(const tcp_hdr_t *header, int size);
