@@ -52,6 +52,7 @@ test-host:
 	./tests/host/test_m6b_contracts.sh
 	./tests/host/test_m6b_smoke_script.sh
 	./tests/host/test_m6c1_tcp.sh
+	./tests/host/test_m6c1_retrans.sh
 	./tests/host/test_m6c1_contracts.sh
 
 m1-build: check-env check-sources

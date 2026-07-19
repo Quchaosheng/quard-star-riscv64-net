@@ -12,6 +12,7 @@
 #include <timeros/net/netif_virtio.h>
 #include <timeros/net/pktbuf.h>
 #include <timeros/net/socket.h>
+#include <timeros/net/tcp.h>
 #include <timeros/net/timer.h>
 #include <timeros/net/udp.h>
 
@@ -196,6 +197,9 @@ net_err_t net_stack_init(void)
     if (err < 0)
         return err;
     err = ipv4_init();
+    if (err < 0)
+        return err;
+    err = tcp_init();
     if (err < 0)
         return err;
     err = icmpv4_init();
