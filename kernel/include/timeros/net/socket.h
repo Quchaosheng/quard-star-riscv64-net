@@ -11,5 +11,10 @@ net_err_t net_socket_init(void);
 int net_socket_open(int type);
 net_err_t net_socket_bind(int handle, uint16_t port);
 net_err_t net_socket_close(int handle);
+net_err_t net_socket_sendto(int handle, netif_t *netif,
+                            const ipaddr_t *dest, uint16_t dest_port,
+                            const uint8_t *data, int size);
+int net_socket_recvfrom(int handle, uint8_t *data, int size, ipaddr_t *src,
+                        uint16_t *src_port, int timeout_ms);
 
 #endif

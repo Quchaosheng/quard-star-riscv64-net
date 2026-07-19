@@ -82,3 +82,24 @@ net_err_t net_socket_close(int handle)
         entry->generation = 1;
     return err;
 }
+
+net_err_t net_socket_sendto(int handle, netif_t *netif,
+                            const ipaddr_t *dest, uint16_t dest_port,
+                            const uint8_t *data, int size)
+{
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0)
+        return NET_ERR_PARAM;
+    return udp_sendto(&entry->udp, netif, dest, dest_port, data, size);
+}
+
+int net_socket_recvfrom(int handle, uint8_t *data, int size, ipaddr_t *src,
+                        uint16_t *src_port, int timeout_ms)
+{
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0)
+        return NET_ERR_PARAM;
+    return udp_recvfrom(&entry->udp, data, size, src, src_port, timeout_ms);
+}

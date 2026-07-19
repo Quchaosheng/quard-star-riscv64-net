@@ -58,3 +58,35 @@ char getchar()
 int sys_exit(u64 exit_code){
     return syscall(__NR_exit,exit_code,0,0);
 }
+
+int sys_socket(int domain, int type, int protocol)
+{
+    return syscall(__NR_socket, domain, type, protocol);
+}
+
+int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length)
+{
+    return syscall(__NR_bind, fd, (reg_t)(uintptr_t)address, address_length);
+}
+
+int sys_sendto(int fd, const void *data, size_t length, int flags,
+               const net_sockaddr_in *address, size_t address_length)
+{
+    net_sendto_args args = { data, length, flags, address, address_length };
+    return syscall(__NR_sendto, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
+int sys_recvfrom(int fd, void *data, size_t length, int flags,
+                 net_sockaddr_in *address, size_t *address_length,
+                 int timeout_ms)
+{
+    net_recvfrom_args args = {
+        data, length, flags, address, address_length, timeout_ms,
+    };
+    return syscall(__NR_recvfrom, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
+int sys_close(int fd)
+{
+    return syscall(__NR_close, fd, 0, 0);
+}
