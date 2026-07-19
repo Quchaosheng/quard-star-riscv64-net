@@ -8,5 +8,6 @@ typedef void (*net_exec_proc_t)(void *arg);
 net_err_t net_exec_init(void);
 net_err_t net_exec_submit(net_exec_proc_t proc, void *arg, int timeout_ms);
 net_err_t net_exec_run_once(void);
+int net_exec_pending(void);
 
 #endif
