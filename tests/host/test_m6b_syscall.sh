@@ -29,7 +29,7 @@ grep -q 'sys_recvfrom' "$root/kernel/lib/app.c" || \
   fail 'missing user recvfrom wrapper'
 grep -q 'user_range_check.*args.data' "$root/kernel/src/syscall.c" || \
   fail 'recvfrom must validate output before consuming a datagram'
-grep -q 'm6b_timeout_observed' "$root/kernel/src/syscall.c" || \
-  fail 'kernel must defer timeout completion until close'
+grep -q 'm6b_timeout_handle = handle' "$root/kernel/src/syscall.c" || \
+  fail 'kernel must bind timeout completion to its socket'
 
 echo 'PASS: M6B socket syscall contracts'
