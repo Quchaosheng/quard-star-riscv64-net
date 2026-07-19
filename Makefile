@@ -45,6 +45,7 @@ test-host:
 	./tests/host/test_m5_smoke_script.sh
 	./tests/host/test_m6a_contracts.sh
 	./tests/host/test_m6a_smoke_script.sh
+	./tests/host/test_m6b_udp.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
