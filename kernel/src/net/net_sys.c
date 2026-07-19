@@ -13,7 +13,7 @@
 #include <timeros/task.h>
 #include <timeros/wait.h>
 
-#define NET_SYS_SEM_MAX 32
+#define NET_SYS_SEM_MAX 68
 
 struct net_sys_sem {
     struct semaphore sem;

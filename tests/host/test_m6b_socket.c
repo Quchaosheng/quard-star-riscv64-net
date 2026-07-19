@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <pthread.h>
+#include <sched.h>
 
 #include <timeros/net/socket.h>
 #include <timeros/net/net_sys.h>
@@ -7,6 +9,19 @@
 #include <timeros/net/ipv4.h>
 #include <timeros/net/loop.h>
 #include <timeros/net/netif.h>
+
+static int recv_started;
+static int recv_result;
+
+static void *socket_recv_thread(void *arg)
+{
+    int handle = *(int *)arg;
+    uint8_t byte;
+
+    __atomic_store_n(&recv_started, 1, __ATOMIC_RELEASE);
+    recv_result = net_socket_recvfrom(handle, &byte, 1, 0, 0, 0);
+    return 0;
+}
 
 int main(void)
 {
@@ -57,6 +72,29 @@ int main(void)
     assert(net_socket_sendto(first, loop, &loop->ipaddr, 4700, payload,
                              sizeof(payload) - 1) == NET_ERR_PARAM);
     assert(net_socket_close(second) == NET_ERR_OK);
+    int handles[NET_SOCKET_MAX];
+    for (int i = 0; i < NET_SOCKET_MAX; i++) {
+        handles[i] = net_socket_open(NET_SOCKET_UDP);
+        assert(handles[i] >= 0);
+    }
+    assert(net_socket_open(NET_SOCKET_UDP) == NET_ERR_FULL);
+    for (int i = 0; i < NET_SOCKET_MAX; i++)
+        assert(net_socket_close(handles[i]) == NET_ERR_OK);
+
+    int waiting = net_socket_open(NET_SOCKET_UDP);
+    assert(waiting >= 0);
+    assert(net_socket_bind(waiting, 4800) == NET_ERR_OK);
+    pthread_t receiver;
+    recv_started = 0;
+    assert(pthread_create(&receiver, 0, socket_recv_thread, &waiting) == 0);
+    while (!__atomic_load_n(&recv_started, __ATOMIC_ACQUIRE))
+        sched_yield();
+    assert(net_socket_close(waiting) == NET_ERR_OK);
+    assert(pthread_join(receiver, 0) == 0);
+    assert(recv_result == NET_ERR_STATE);
+    int reused = net_socket_open(NET_SOCKET_UDP);
+    assert(reused >= 0 && reused != waiting);
+    assert(net_socket_close(reused) == NET_ERR_OK);
     assert(netif_set_deactive(loop) == NET_ERR_OK);
     assert(netif_close(loop) == NET_ERR_OK);
     return 0;

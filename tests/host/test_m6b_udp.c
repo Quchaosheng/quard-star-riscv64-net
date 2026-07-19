@@ -142,6 +142,77 @@ static void test_udp_close_wakes_receiver(void)
     assert(close_wait_result == NET_ERR_STATE);
 }
 
+static void test_udp_close_wakes_receiver_with_full_queue(void)
+{
+    pthread_t thread;
+    udp_pcb_t sender;
+    udp_pcb_t receiver;
+
+    assert(netif_init() == NET_ERR_OK);
+    assert(ether_init() == NET_ERR_OK);
+    assert(ipv4_init() == NET_ERR_OK);
+    assert(loop_init() == NET_ERR_OK);
+    assert(udp_init() == NET_ERR_OK);
+    assert(udp_open(&sender) == NET_ERR_OK);
+    assert(udp_open(&receiver) == NET_ERR_OK);
+    assert(udp_bind(&sender, 4510) == NET_ERR_OK);
+    assert(udp_bind(&receiver, 4520) == NET_ERR_OK);
+    netif_t *loop = loop_get_netif();
+    for (int i = 0; i < UDP_RECV_MAX; i++) {
+        uint8_t byte = (uint8_t)i;
+        assert(udp_sendto(&sender, loop, &loop->ipaddr, 4520,
+                          &byte, 1) == NET_ERR_OK);
+        pktbuf_t *packet = netif_get_in(loop, -1);
+        assert(packet != 0);
+        assert(ipv4_in(loop, packet) == NET_ERR_OK);
+    }
+    close_wait_started = 0;
+    assert(pthread_create(&thread, 0, close_wait_thread, &receiver) == 0);
+    while (!__atomic_load_n(&close_wait_started, __ATOMIC_ACQUIRE))
+        sched_yield();
+    assert(udp_close(&receiver) == NET_ERR_OK);
+    assert(pthread_join(thread, 0) == 0);
+    assert(close_wait_result == NET_ERR_STATE);
+    assert(udp_close(&sender) == NET_ERR_OK);
+    assert(netif_set_deactive(loop) == NET_ERR_OK);
+    assert(netif_close(loop) == NET_ERR_OK);
+}
+
+static void test_udp_discards_bytes_after_declared_length(void)
+{
+    udp_pcb_t receiver;
+    ipaddr_t source;
+    uint8_t received[4] = { 0 };
+    pktbuf_t *packet = pktbuf_alloc(UDP_HEADER_SIZE + 2);
+
+    assert(netif_init() == NET_ERR_OK);
+    assert(ether_init() == NET_ERR_OK);
+    assert(ipv4_init() == NET_ERR_OK);
+    assert(loop_init() == NET_ERR_OK);
+    assert(udp_init() == NET_ERR_OK);
+    assert(packet != 0);
+    udp_hdr_t *header = (udp_hdr_t *)pktbuf_data(packet);
+    header->src_port = x_htons(4530);
+    header->dest_port = x_htons(4540);
+    header->total_len = x_htons(UDP_HEADER_SIZE + 1);
+    header->checksum = 0;
+    pktbuf_reset_acc(packet);
+    assert(pktbuf_seek(packet, UDP_HEADER_SIZE) == NET_ERR_OK);
+    static const uint8_t payload[] = { 'A', 'B' };
+    assert(pktbuf_write(packet, payload, sizeof(payload)) == NET_ERR_OK);
+    assert(udp_open(&receiver) == NET_ERR_OK);
+    assert(udp_bind(&receiver, 4540) == NET_ERR_OK);
+    ipaddr_from_str(&source, "10.0.0.1");
+    assert(udp_in(loop_get_netif(), &source, &loop_get_netif()->ipaddr,
+                  packet) == NET_ERR_OK);
+    assert(udp_recvfrom(&receiver, received, sizeof(received), 0, 0, -1) == 1);
+    assert(received[0] == 'A');
+    assert(udp_close(&receiver) == NET_ERR_OK);
+    netif_t *loop = loop_get_netif();
+    assert(netif_set_deactive(loop) == NET_ERR_OK);
+    assert(netif_close(loop) == NET_ERR_OK);
+}
+
 int main(void)
 {
     test_udp_header_validation();
@@ -149,5 +220,7 @@ int main(void)
     test_udp_loopback_send_receive();
     test_udp_rejects_bad_checksum();
     test_udp_close_wakes_receiver();
+    test_udp_close_wakes_receiver_with_full_queue();
+    test_udp_discards_bytes_after_declared_length();
     return 0;
 }
