@@ -18,6 +18,10 @@ int main()
     }
 #endif
 
+#ifdef QS_M6B_TEST
+    sys_exec("udp_echo");
+#else
     sys_exec("user_shell");
+#endif
 
 }

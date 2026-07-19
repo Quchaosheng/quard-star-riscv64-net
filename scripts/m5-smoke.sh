@@ -16,7 +16,8 @@ tap_created=0
 peer_pid=
 smoke_pid=
 
-if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ]; then
+if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ] && \
+  [ "$test_name" != m6b-smoke ]; then
   echo "error: unsupported M5 test name $test_name" >&2
   exit 1
 fi
@@ -49,6 +50,9 @@ fi
 set -- "$peer" "$iface" --raw-count "$raw_count" \
   --timeout "${QS_PEER_TIMEOUT:-${QS_SMOKE_TIMEOUT:-60}}" \
   --ready-file "$ready" --stats-file "$stats"
+if [ "$test_name" = m6b-smoke ]; then
+  set -- "$@" --require-udp
+fi
 peer_needs_sudo=0
 if [ "${QS_FORCE_PEER_SUDO:-0}" = 1 ]; then
   peer_needs_sudo=1
@@ -89,8 +93,11 @@ export QS_STAGE=$stage
 export QS_TEST_NAME=$test_name
 export QS_TAP_IFACE=$iface
 extra_m6_markers=
-if [ "$test_name" = m6a-smoke ]; then
+if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ]; then
   extra_m6_markers='QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK'
+fi
+if [ "$test_name" = m6b-smoke ]; then
+  extra_m6_markers="$extra_m6_markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
 fi
 export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK $extra_m6_markers QS:TEST_PASS:$test_name"
 export QS_SMOKE_TIMEOUT=${QS_SMOKE_TIMEOUT:-60}
@@ -117,9 +124,12 @@ if [ "$peer_status" -ne 0 ]; then
   echo "error: M5 peer exit status $peer_status" >&2
   exit 1
 fi
-if [ "$test_name" = m6a-smoke ]; then
-  for marker in QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK \
-    QS:TEST_PASS:m6a-smoke; do
+if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ]; then
+  markers="QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK QS:TEST_PASS:$test_name"
+  if [ "$test_name" = m6b-smoke ]; then
+    markers="$markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
+  fi
+  for marker in $markers; do
     count=$(tr -d '\000\r' < "$out/qemu.log" | grep -Fxc "$marker" || true)
     if [ "$count" -ne 1 ]; then
       echo "error: expected exactly one $marker, found $count" >&2
@@ -127,7 +137,7 @@ if [ "$test_name" = m6a-smoke ]; then
     fi
   done
 fi
-if ! python3 - "$stats" "$raw_count" <<'PY'
+if ! python3 - "$stats" "$raw_count" "$test_name" <<'PY'
 import json
 import pathlib
 import sys
@@ -145,7 +155,11 @@ required = (
     data.get("guest_echo_requests", 0) >= 1 and
     data.get("guest_echo_replies", 0) >= 1 and
     data.get("host_echo_requests", 0) >= 1 and
-    data.get("host_echo_replies", 0) >= 1
+    data.get("host_echo_replies", 0) >= 1 and
+    (sys.argv[3] != "m6b-smoke" or (
+        data.get("udp_requests", 0) >= 1 and
+        data.get("udp_replies", 0) >= 1
+    ))
 )
 raise SystemExit(0 if required else 1)
 PY
