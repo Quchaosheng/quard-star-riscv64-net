@@ -11,6 +11,7 @@
 			mmu-type = "riscv,sv39";
 
 			cpu1_intc: interrupt-controller {
+				#address-cells = <0>;
 				#interrupt-cells = <1>;
 				interrupt-controller;
 				compatible = "riscv,cpu-intc";
