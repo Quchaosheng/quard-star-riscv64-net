@@ -6,6 +6,11 @@
 #include <timeros/net/protocol.h>
 #include <timeros/net/tools.h>
 
+#ifdef UDP_TEST
+void udp_test_recv_acquired_hook(void);
+void udp_test_close_marked_hook(void);
+#endif
+
 typedef struct _udp_recv_t {
     pktbuf_t *buf;
     ipaddr_t src;
@@ -103,6 +108,9 @@ net_err_t udp_close(udp_pcb_t *pcb)
     pcb->open = 0;
     int waiting = pcb->recv_waiting;
     nlocker_unlock(&pcb->state_locker);
+#ifdef UDP_TEST
+    udp_test_close_marked_hook();
+#endif
     if (waiting) {
         fixq_wake_receiver(&pcb->recv_queue);
         (void)sys_sem_wait(pcb->close_done, 0);
@@ -202,6 +210,9 @@ net_err_t udp_recv_acquire(udp_pcb_t *pcb)
     }
     pcb->recv_waiting = 1;
     nlocker_unlock(&pcb->state_locker);
+#ifdef UDP_TEST
+    udp_test_recv_acquired_hook();
+#endif
     return NET_ERR_OK;
 }
 

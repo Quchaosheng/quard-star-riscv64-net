@@ -52,10 +52,12 @@ int main(void)
         return -1;
     }
     printf("QS:M6B_UDP_TIMEOUT_OK\n");
-    for (int i = 0; i < TEST_SOCKET_COUNT; i++) {
+    for (int i = 1; i < TEST_SOCKET_COUNT; i++) {
         if (sys_close(sockets[i]) < 0)
             return -1;
     }
+    if (sys_close(fd) < 0)
+        return -1;
     while (1)
         sys_yield();
 }

@@ -5,6 +5,7 @@ typedef struct _socket_entry_t {
     uint32_t generation;
     int used;
     int closing;
+    int retired;
     int type;
 } socket_entry_t;
 
@@ -40,6 +41,7 @@ net_err_t net_socket_init(void)
     for (int i = 0; i < NET_SOCKET_MAX; i++) {
         entries[i].used = 0;
         entries[i].closing = 0;
+        entries[i].retired = 0;
         entries[i].generation = 1;
     }
     nlocker_init(&socket_locker, NLOCKER_THREAD);
@@ -52,7 +54,7 @@ int net_socket_open(int type)
         return NET_ERR_NOT_SUPPORT;
     for (int i = 0; i < NET_SOCKET_MAX; i++) {
         socket_entry_t *entry = &entries[i];
-        if (!entry->used) {
+        if (!entry->used && !entry->retired) {
             if (udp_open(&entry->udp) < 0)
                 return NET_ERR_MEM;
             entry->used = 1;
@@ -95,9 +97,10 @@ net_err_t net_socket_close(int handle)
     }
     entry->used = 0;
     entry->closing = 0;
-    entry->generation++;
-    if (entry->generation > 0x7fffffU)
-        entry->generation = 1;
+    if (entry->generation == 0x7fffffU)
+        entry->retired = 1;
+    else
+        entry->generation++;
     nlocker_unlock(&socket_locker);
     return NET_ERR_OK;
 }

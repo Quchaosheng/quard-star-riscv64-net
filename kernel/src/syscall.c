@@ -12,7 +12,7 @@
 static int copy_from_user(void *dst, const char *src, size_t len);
 
 #ifdef QS_M6B_TEST
-static int m6b_timeout_observed;
+static int m6b_timeout_handle = -1;
 #endif
 
 typedef struct _socket_exec_t {
@@ -308,7 +308,7 @@ static int __sys_recvfrom(int handle, const net_recvfrom_args *user_args)
 #ifdef QS_M6B_TEST
     {
         if (result == NET_ERR_TMO)
-            m6b_timeout_observed = 1;
+            m6b_timeout_handle = handle;
         return result;
     }
 #else
@@ -341,8 +341,10 @@ static int __sys_close(int handle)
     };
     int result = socket_exec_wait(&request);
 #ifdef QS_M6B_TEST
-    if (result == NET_ERR_OK && m6b_timeout_observed)
+    if (result == NET_ERR_OK && m6b_timeout_handle == handle) {
         m6b_mark_udp_timeout();
+        m6b_timeout_handle = -1;
+    }
 #endif
     return result;
 }

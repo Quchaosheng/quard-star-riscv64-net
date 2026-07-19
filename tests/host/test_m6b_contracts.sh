@@ -15,6 +15,10 @@ grep -q 'QS:M6B_UDP_OK' "$root/user/udp_echo.c" || fail 'missing UDP marker'
 grep -q 'QS:M6B_UDP_TIMEOUT_OK' "$root/user/udp_echo.c" || fail 'missing timeout marker'
 grep -q 'TEST_SOCKET_COUNT 16' "$root/user/udp_echo.c" || \
   fail 'guest must exercise all 16 target socket slots'
+grep -q 'for (int i = 1; i < TEST_SOCKET_COUNT; i++)' \
+  "$root/user/udp_echo.c" || fail 'guest must close the tested socket last'
+grep -q 'retired' "$root/kernel/src/net/socket.c" || \
+  fail 'exhausted generations must retire instead of wrapping'
 grep -q 'QS:TEST_PASS:m6b-smoke' "$root/kernel/src/selftest.c" || \
   fail 'missing M6B pass marker'
 grep -q 'sys_write(stdout,out_buf,res);' "$root/kernel/lib/printf.c" || \
