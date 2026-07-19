@@ -19,6 +19,7 @@ typedef struct {
 net_err_t fixq_init(fixq_t *queue, void **buf, int size, nlocker_type_t type);
 net_err_t fixq_send(fixq_t *queue, void *msg, int timeout);
 void *fixq_recv(fixq_t *queue, int timeout);
+void fixq_wake_receiver(fixq_t *queue);
 void fixq_destroy(fixq_t *queue);
 int fixq_count(fixq_t *queue);
 

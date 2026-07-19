@@ -67,12 +67,22 @@ void *fixq_recv(fixq_t *queue, int timeout)
         return 0;
 
     nlocker_lock(&queue->locker);
+    if (queue->count == 0) {
+        nlocker_unlock(&queue->locker);
+        return 0;
+    }
     void *msg = queue->buf[queue->out];
     queue->out = (queue->out + 1) % queue->size;
     queue->count--;
     nlocker_unlock(&queue->locker);
     sys_sem_notify(queue->send_sem);
     return msg;
+}
+
+void fixq_wake_receiver(fixq_t *queue)
+{
+    if (queue != 0)
+        sys_sem_notify(queue->recv_sem);
 }
 
 void fixq_destroy(fixq_t *queue)
