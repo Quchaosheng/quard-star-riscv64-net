@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+grep -q '^m6b-build:' "$root/Makefile" || fail 'missing m6b-build target'
+grep -q '^m6b-smoke:' "$root/Makefile" || fail 'missing m6b-smoke target'
+grep -q 'QS_M6B_TEST' "$root/scripts/m6b-build.sh" || fail 'missing M6B flag'
+grep -q 'm6a-build.sh' "$root/scripts/m6b-build.sh" || fail 'M6B must reuse M6A build'
+grep -q 'sys_socket' "$root/user/udp_echo.c" || fail 'guest must use socket syscall'
+grep -q 'sys_sendto' "$root/user/udp_echo.c" || fail 'guest must send UDP'
+grep -q 'sys_recvfrom' "$root/user/udp_echo.c" || fail 'guest must receive UDP'
+grep -q 'QS:M6B_UDP_OK' "$root/user/udp_echo.c" || fail 'missing UDP marker'
+grep -q 'QS:M6B_UDP_TIMEOUT_OK' "$root/user/udp_echo.c" || fail 'missing timeout marker'
+grep -q 'QS:TEST_PASS:m6b-smoke' "$root/kernel/src/selftest.c" || \
+  fail 'missing M6B pass marker'
+
+echo 'PASS: M6B source and build contracts'

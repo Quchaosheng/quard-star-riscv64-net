@@ -23,5 +23,7 @@ void m5_mark_net_ping(void);
 void m6_mark_queue(void);
 void m6_mark_arp_timer(void);
 void m6_mark_loop(void);
+void m6b_mark_udp(void);
+void m6b_mark_udp_timeout(void);
 
 #endif
