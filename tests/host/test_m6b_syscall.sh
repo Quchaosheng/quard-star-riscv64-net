@@ -19,6 +19,8 @@ grep -q 'net_socket_open' "$root/kernel/src/syscall.c" || \
   fail 'socket syscall must use the bounded socket table'
 grep -q 'net_exec_submit' "$root/kernel/src/syscall.c" || \
   fail 'socket mutations must enter the network executor'
+grep -q 'timeros/net/tools.h' "$root/kernel/src/syscall.c" || \
+  fail 'socket ABI byte-order helpers must be declared'
 grep -q 'typedef struct.*net_sockaddr_in' "$root/kernel/include/timeros/syscall.h" || \
   fail 'missing fixed-width socket address ABI'
 grep -q 'sys_sendto' "$root/kernel/lib/app.c" || \
