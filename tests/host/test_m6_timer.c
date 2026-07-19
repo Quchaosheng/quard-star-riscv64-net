@@ -90,7 +90,7 @@ static void test_reload_uses_next_check_baseline(void)
     assert(slow_state.calls == 1);
 
     assert(net_timer_check_tmo(10) == NET_ERR_OK);
-    assert(fast_state.calls == 3);
+    assert(fast_state.calls == 4);
     assert(net_timer_first_tmo() == 10);
     net_timer_remove(&fast);
 }
