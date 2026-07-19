@@ -13,6 +13,7 @@ typedef struct _net_exec_req_t {
     sys_sem_t done;
     int completed;
     int abandoned;
+    int started;
 } net_exec_req_t;
 
 static fixq_t request_queue;
@@ -53,6 +54,7 @@ net_err_t net_exec_submit(net_exec_proc_t proc, void *arg, int timeout_ms)
             request->arg = arg;
             request->completed = 0;
             request->abandoned = 0;
+            request->started = 0;
             break;
         }
     }
@@ -68,6 +70,11 @@ net_err_t net_exec_submit(net_exec_proc_t proc, void *arg, int timeout_ms)
     }
     err = sys_sem_wait(request->done, timeout_ms);
     nlocker_lock(&request_locker);
+    if (err < 0 && request->started && !request->completed) {
+        nlocker_unlock(&request_locker);
+        err = sys_sem_wait(request->done, 0);
+        nlocker_lock(&request_locker);
+    }
     if (request->completed) {
         if (err < 0)
             (void)sys_sem_wait(request->done, -1);
@@ -87,6 +94,14 @@ net_err_t net_exec_run_once(void)
     net_exec_req_t *request = fixq_recv(&request_queue, -1);
     if (request == 0)
         return NET_ERR_NONE;
+    nlocker_lock(&request_locker);
+    if (request->abandoned) {
+        request->proc = 0;
+        nlocker_unlock(&request_locker);
+        return NET_ERR_OK;
+    }
+    request->started = 1;
+    nlocker_unlock(&request_locker);
     request->proc(request->arg);
     nlocker_lock(&request_locker);
     int notify = !request->abandoned;
