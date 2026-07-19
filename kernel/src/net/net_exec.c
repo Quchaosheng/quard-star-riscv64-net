@@ -10,6 +10,9 @@
 typedef struct _net_exec_req_t {
     net_exec_proc_t proc;
     void *arg;
+    sys_sem_t done;
+    int completed;
+    int abandoned;
 } net_exec_req_t;
 
 static fixq_t request_queue;
@@ -27,6 +30,12 @@ net_err_t net_exec_init(void)
     if (err < 0)
         return err;
     nlocker_init(&request_locker, NLOCKER_THREAD);
+    for (int i = 0; i < NET_EXEC_QUEUE_SIZE; i++) {
+        requests[i].proc = 0;
+        requests[i].done = sys_sem_create(0);
+        if (requests[i].done == SYS_SEM_INVALID)
+            return NET_ERR_MEM;
+    }
     initialized = 1;
     return NET_ERR_OK;
 }
@@ -42,6 +51,8 @@ net_err_t net_exec_submit(net_exec_proc_t proc, void *arg, int timeout_ms)
             request = &requests[i];
             request->proc = proc;
             request->arg = arg;
+            request->completed = 0;
+            request->abandoned = 0;
             break;
         }
     }
@@ -53,7 +64,19 @@ net_err_t net_exec_submit(net_exec_proc_t proc, void *arg, int timeout_ms)
         nlocker_lock(&request_locker);
         request->proc = 0;
         nlocker_unlock(&request_locker);
+        return err;
     }
+    err = sys_sem_wait(request->done, timeout_ms);
+    nlocker_lock(&request_locker);
+    if (request->completed) {
+        if (err < 0)
+            (void)sys_sem_wait(request->done, -1);
+        request->proc = 0;
+        err = NET_ERR_OK;
+    } else {
+        request->abandoned = 1;
+    }
+    nlocker_unlock(&request_locker);
     return err;
 }
 
@@ -66,7 +89,18 @@ net_err_t net_exec_run_once(void)
         return NET_ERR_NONE;
     request->proc(request->arg);
     nlocker_lock(&request_locker);
-    request->proc = 0;
+    int notify = !request->abandoned;
+    if (!notify)
+        request->proc = 0;
+    else {
+        request->completed = 1;
+        sys_sem_notify(request->done);
+    }
     nlocker_unlock(&request_locker);
     return NET_ERR_OK;
+}
+
+int net_exec_pending(void)
+{
+    return initialized ? fixq_count(&request_queue) : 0;
 }
