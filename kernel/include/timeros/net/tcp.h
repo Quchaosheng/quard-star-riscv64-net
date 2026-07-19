@@ -35,6 +35,7 @@ typedef enum _tcp_state_t {
 } tcp_state_t;
 
 net_err_t tcp_header_check(const tcp_hdr_t *header, int size);
+/* Returns 0 when buf, src, or dest is null; callers validate send inputs. */
 uint16_t tcp_checksum(pktbuf_t *buf, const ipaddr_t *src,
                       const ipaddr_t *dest, uint16_t length);
 int tcp_sequence_in_window(uint32_t sequence, uint32_t start,

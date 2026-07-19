@@ -27,6 +27,9 @@ net_err_t tcp_header_check(const tcp_hdr_t *header, int size)
 uint16_t tcp_checksum(pktbuf_t *buf, const ipaddr_t *src,
                       const ipaddr_t *dest, uint16_t length)
 {
+    if (buf == 0 || src == 0 || dest == 0)
+        return 0;
+
     tcp_pseudo_t pseudo;
 
     ipaddr_to_buf(src, pseudo.src);
