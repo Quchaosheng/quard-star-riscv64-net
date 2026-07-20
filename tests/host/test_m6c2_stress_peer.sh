@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+
+PYTHONDONTWRITEBYTECODE=1 python3 - "$root" <<'PY'
+import importlib.util
+import inspect
+import json
+import pathlib
+import sys
+import tempfile
+
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("m5_peer", root / "scripts/m5-peer.py")
+if spec is None or spec.loader is None:
+    raise SystemExit("cannot load m5-peer.py")
+peer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(peer)
+peer.socket.AF_PACKET = getattr(peer.socket, "AF_PACKET", 17)
+peer.socket.SOCK_RAW = getattr(peer.socket, "SOCK_RAW", 3)
+peer.socket.PACKET_OUTGOING = getattr(peer.socket, "PACKET_OUTGOING", 4)
+
+assert peer.STRESS_PARALLEL == 8
+assert peer.STRESS_RECONNECTS == 100
+assert "require_tcp_server_stress" in inspect.signature(peer.run_peer).parameters
+
+
+class FakeSocket:
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.sent = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def bind(self, address):
+        assert address == ("tap-test", 0)
+
+    def settimeout(self, timeout):
+        assert timeout > 0
+
+    def recvfrom(self, capacity):
+        assert capacity == peer.ETHERNET_MAX_FRAME
+        if not self.frames:
+            raise TimeoutError("fake frame stream exhausted")
+        return self.frames.pop(0), ("tap-test", 0, 0, 0)
+
+    def send(self, frame):
+        self.sent.append(frame)
+        return len(frame)
+
+
+def active_flow():
+    src_port = 12345
+    guest_isn = 100
+    host_isn = 9000
+    payload = b"quard-star-m6c1"
+    guest_data = guest_isn + 1
+    guest_end = guest_data + len(payload)
+    host_data = host_isn + 1
+    host_end = host_data + len(payload)
+
+    def segment(seq, ack, flags, body=b""):
+        return peer.encode_tcp(
+            peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+            src_port, peer.HOST_TCP_PORT, seq, ack, flags, body
+        )
+
+    return [
+        segment(guest_isn, 0, peer.TCP_FLAG_SYN),
+        segment(guest_data, host_data, peer.TCP_FLAG_ACK),
+        segment(guest_data, host_data,
+                peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
+        segment(guest_data, host_data,
+                peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
+        segment(guest_end, host_end, peer.TCP_FLAG_ACK),
+        segment(guest_end, host_end, peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK),
+        segment(guest_end + 1, host_end + 1, peer.TCP_FLAG_ACK),
+    ]
+
+
+def common_frames(tcp_frames):
+    return [
+        peer.encode_arp_request(peer.GUEST_MAC, peer.GUEST_IP,
+                                peer.HOST_IP, b"\0" * 6),
+        peer.encode_arp_reply(peer.GUEST_MAC, peer.HOST_MAC,
+                              peer.GUEST_IP, peer.HOST_IP),
+        peer.encode_icmp_echo(
+            peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+            peer.TEST_IDENTIFIER, peer.TEST_SEQUENCE, b"quard-star-m6c2",
+            peer.ICMP_ECHO_REQUEST),
+        peer.encode_icmp_echo(
+            peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+            peer.HOST_IDENTIFIER, peer.HOST_SEQUENCE, b"host-to-guest-m5",
+            peer.ICMP_ECHO_REPLY),
+        peer.encode_udp(
+            peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+            peer.GUEST_UDP_PORT, peer.HOST_UDP_PORT, b"quard-star-m6b"),
+        *tcp_frames,
+    ]
+
+
+def stress_parts(index):
+    host_port = peer.HOST_TCP_SERVER_PORT + index
+    host_isn = 12000 + index * 32
+    guest_isn = 200 + index * 32
+    payload = f"m6c2-{index:03d}".encode()
+    host_data = host_isn + 1
+    host_end = host_data + len(payload)
+    guest_data = guest_isn + 1
+    guest_end = guest_data + len(payload)
+
+    def segment(seq, ack, flags, body=b""):
+        return peer.encode_tcp(
+            peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+            peer.GUEST_TCP_SERVER_PORT, host_port, seq, ack, flags, body)
+
+    exchange = [
+        segment(guest_isn, host_data, peer.TCP_FLAG_SYN | peer.TCP_FLAG_ACK),
+        segment(guest_data, host_end, peer.TCP_FLAG_ACK),
+        segment(guest_data, host_end,
+                peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
+    ]
+    close = [
+        segment(guest_end, host_end + 1, peer.TCP_FLAG_ACK),
+        segment(guest_end, host_end + 1,
+                peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK),
+    ]
+    return exchange, close
+
+
+def stress_flow(connection_count=108):
+    exchanges = []
+    closes = []
+    parallel = min(connection_count, peer.STRESS_PARALLEL)
+    for index in range(parallel):
+        exchange, close = stress_parts(index)
+        exchanges.extend(exchange)
+        closes.extend(close)
+    frames = exchanges + closes
+    for index in range(peer.STRESS_PARALLEL, connection_count):
+        exchange, close = stress_parts(index)
+        frames.extend(exchange + close)
+    return frames
+
+
+def run(stress_frames):
+    fake = FakeSocket(common_frames(active_flow() + stress_frames))
+    original_socket = peer.socket.socket
+    peer.socket.socket = lambda *args, **kwargs: fake
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            stats_path = pathlib.Path(tmp) / "stats.json"
+            result = peer.run_peer(
+                "tap-test", 0, 2.0, None, str(stats_path), True, True,
+                False, True)
+            return result, fake.sent, json.loads(stats_path.read_text())
+    finally:
+        peer.socket.socket = original_socket
+
+
+result, sent, stats = run(stress_flow())
+assert result == 0
+assert stats["tcp_server_stress_handshakes"] == 108
+assert stats["tcp_server_stress_echo"] == 108
+assert stats["tcp_server_stress_parallel_peak"] == 8
+assert stats["tcp_server_stress_reconnects"] == 100
+assert stats["tcp_server_stress_fin"] == 108
+assert stats["tcp_server_stress_outstanding"] == 0
+
+server_syns = [
+    segment for frame in sent
+    if (segment := peer.decode_tcp(frame)) is not None and
+    segment["dst_port"] == peer.GUEST_TCP_SERVER_PORT and
+    segment["flags"] == peer.TCP_FLAG_SYN
+]
+assert len(server_syns) == 108
+assert len({segment["src_port"] for segment in server_syns}) == 108
+
+
+def rejected(frames):
+    try:
+        run(frames)
+    except (TimeoutError, ValueError):
+        return
+    raise AssertionError("peer accepted malformed stress flow")
+
+
+wrong_sequence = stress_flow()
+segment = peer.decode_tcp(wrong_sequence[1])
+wrong_sequence[1] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], segment["dst_port"], segment["seq"] + 1,
+    segment["ack"], segment["flags"], segment["payload"])
+rejected(wrong_sequence)
+
+wrong_payload = stress_flow()
+segment = peer.decode_tcp(wrong_payload[2])
+wrong_payload[2] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], segment["dst_port"], segment["seq"],
+    segment["ack"], segment["flags"], b"m6c2-999")
+rejected(wrong_payload)
+
+cross_tuple = stress_flow()
+segment = peer.decode_tcp(cross_tuple[4])
+cross_tuple[4] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], peer.HOST_TCP_SERVER_PORT,
+    segment["seq"], segment["ack"], segment["flags"], segment["payload"])
+rejected(cross_tuple)
+
+rejected(stress_flow(107))
+PY
+
+echo 'PASS: M6C2 peer validates eight live connections and 100 reconnects'

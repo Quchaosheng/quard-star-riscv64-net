@@ -26,6 +26,8 @@ HOST_TCP_PORT = 4800
 GUEST_TCP_SERVER_PORT = 4801
 HOST_TCP_SERVER_PORT = 4802
 TCP_SERVER_PAYLOAD = b"quard-star-m6c2"
+STRESS_PARALLEL = 8
+STRESS_RECONNECTS = 100
 TCP_FLAG_FIN = 0x01
 TCP_FLAG_SYN = 0x02
 TCP_FLAG_PSH = 0x08
@@ -305,10 +307,161 @@ def write_stats(path: str | None, stats: dict, elapsed: float) -> None:
         pathlib.Path(path).write_text(json.dumps(output) + "\n", encoding="utf-8")
 
 
+class PassiveTcpStress:
+    def __init__(self, peer, stats: dict):
+        self.peer = peer
+        self.stats = stats
+        self.connections = {}
+
+    @staticmethod
+    def _payload(index: int) -> bytes:
+        return f"m6c2-{index:03d}".encode()
+
+    def _send(self, connection: dict, flags: int,
+              payload: bytes = b"") -> None:
+        self.peer.send(encode_tcp(
+            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+            connection["host_port"], GUEST_TCP_SERVER_PORT,
+            connection["host_next"], connection["guest_next"],
+            flags, payload))
+
+    def _open(self, index: int) -> None:
+        host_port = HOST_TCP_SERVER_PORT + index
+        connection = {
+            "index": index,
+            "host_port": host_port,
+            "payload": self._payload(index),
+            "host_next": 12000 + index * 32,
+            "guest_next": 0,
+            "state": "syn-ack",
+            "fin_acked": False,
+        }
+        self.connections[host_port] = connection
+        self._send(connection, TCP_FLAG_SYN)
+
+    def start(self) -> None:
+        self._open(0)
+
+    def _send_fin(self, connection: dict) -> None:
+        self._send(connection, TCP_FLAG_FIN | TCP_FLAG_ACK)
+        connection["host_next"] += 1
+        connection["state"] = "closing"
+        self.stats["tcp_server_stress_outstanding"] += 1
+
+    def _finish(self, connection: dict) -> None:
+        if not connection["fin_acked"]:
+            self.stats["tcp_server_stress_outstanding"] -= 1
+        connection["guest_next"] += 1
+        self._send(connection, TCP_FLAG_ACK)
+        connection["state"] = "complete"
+        self.stats["tcp_server_stress_fin"] += 1
+        self.stats["tcp_server_stress_live"] -= 1
+        index = connection["index"]
+        if index >= STRESS_PARALLEL:
+            self.stats["tcp_server_stress_reconnects"] += 1
+            if index + 1 < STRESS_PARALLEL + STRESS_RECONNECTS:
+                self._open(index + 1)
+        elif all(self.connections[HOST_TCP_SERVER_PORT + current]["state"] ==
+                 "complete" for current in range(STRESS_PARALLEL)):
+            self._open(STRESS_PARALLEL)
+
+    def handle(self, segment: dict) -> None:
+        connection = self.connections.get(segment["dst_port"])
+        if connection is None:
+            raise ValueError("unexpected TCP stress tuple")
+        flags = segment["flags"]
+        state = connection["state"]
+
+        if state == "syn-ack":
+            if flags != (TCP_FLAG_SYN | TCP_FLAG_ACK) or \
+                    segment["ack"] != connection["host_next"] + 1 or \
+                    segment["payload"]:
+                raise ValueError("unexpected TCP stress SYN-ACK")
+            connection["guest_next"] = segment["seq"] + 1
+            connection["host_next"] += 1
+            self._send(connection, TCP_FLAG_ACK)
+            self._send(connection, TCP_FLAG_PSH | TCP_FLAG_ACK,
+                       connection["payload"])
+            connection["host_next"] += len(connection["payload"])
+            connection["state"] = "data-ack"
+            self.stats["tcp_server_stress_handshakes"] += 1
+            self.stats["tcp_server_stress_outstanding"] += 1
+            return
+
+        if state == "data-ack":
+            if flags != TCP_FLAG_ACK or \
+                    segment["seq"] != connection["guest_next"] or \
+                    segment["ack"] != connection["host_next"] or \
+                    segment["payload"]:
+                raise ValueError("unexpected TCP stress data ACK")
+            connection["state"] = "echo"
+            self.stats["tcp_server_stress_outstanding"] -= 1
+            return
+
+        if state == "echo":
+            if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                    segment["seq"] != connection["guest_next"] or \
+                    segment["ack"] != connection["host_next"] or \
+                    segment["payload"] != connection["payload"]:
+                raise ValueError("unexpected TCP stress Echo")
+            connection["guest_next"] += len(connection["payload"])
+            self._send(connection, TCP_FLAG_ACK)
+            connection["state"] = "held"
+            self.stats["tcp_server_stress_echo"] += 1
+            self.stats["tcp_server_stress_live"] += 1
+            self.stats["tcp_server_stress_parallel_peak"] = max(
+                self.stats["tcp_server_stress_parallel_peak"],
+                self.stats["tcp_server_stress_live"])
+            index = connection["index"]
+            if index + 1 < STRESS_PARALLEL:
+                self._open(index + 1)
+            elif index + 1 == STRESS_PARALLEL:
+                for current in range(STRESS_PARALLEL):
+                    self._send_fin(
+                        self.connections[HOST_TCP_SERVER_PORT + current])
+            else:
+                self._send_fin(connection)
+            return
+
+        if state == "closing":
+            expected = (segment["seq"] == connection["guest_next"] and
+                        segment["ack"] == connection["host_next"] and
+                        not segment["payload"])
+            if not expected:
+                raise ValueError("unexpected TCP stress close sequence")
+            if flags == TCP_FLAG_ACK:
+                if not connection["fin_acked"]:
+                    connection["fin_acked"] = True
+                    self.stats["tcp_server_stress_outstanding"] -= 1
+                return
+            if flags == (TCP_FLAG_FIN | TCP_FLAG_ACK):
+                self._finish(connection)
+                return
+            raise ValueError("unexpected TCP stress close flags")
+
+        raise ValueError("unexpected completed TCP stress connection")
+
+    def complete(self) -> bool:
+        return (
+            self.stats["tcp_server_stress_handshakes"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_echo"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_parallel_peak"] ==
+            STRESS_PARALLEL and
+            self.stats["tcp_server_stress_reconnects"] ==
+            STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_fin"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_outstanding"] == 0
+        )
+
+
 def run_peer(interface: str, raw_count: int, timeout: float,
              ready_file: str | None, stats_file: str | None,
              require_udp: bool = False, require_tcp: bool = False,
-             require_tcp_server: bool = False) -> int:
+             require_tcp_server: bool = False,
+             require_tcp_server_stress: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -333,6 +486,13 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "tcp_server_retransmissions": 0,
         "tcp_server_fin": 0,
         "tcp_server_outstanding": 0,
+        "tcp_server_stress_handshakes": 0,
+        "tcp_server_stress_echo": 0,
+        "tcp_server_stress_parallel_peak": 0,
+        "tcp_server_stress_reconnects": 0,
+        "tcp_server_stress_fin": 0,
+        "tcp_server_stress_outstanding": 0,
+        "tcp_server_stress_live": 0,
     }
     expected_raw = 0
     host_arp_request_sent = False
@@ -351,6 +511,7 @@ def run_peer(interface: str, raw_count: int, timeout: float,
     tcp_server_guest_next = 0
     tcp_server_host_next = 12000
     tcp_server_state = "syn-ack"
+    tcp_server_stress = None
 
     def complete() -> bool:
         return (
@@ -380,6 +541,10 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 stats["tcp_server_retransmissions"] >= 1 and
                 stats["tcp_server_fin"] >= 1 and
                 stats["tcp_server_outstanding"] == 0
+            )) and
+            (not require_tcp_server_stress or (
+                tcp_server_stress is not None and
+                tcp_server_stress.complete()
             ))
         )
 
@@ -524,13 +689,24 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                         tcp["ack"] != tcp_host_next or tcp["payload"]:
                     raise ValueError("unexpected TCP final ACK")
                 stats["tcp_outstanding"] = 0
-                if require_tcp_server and not tcp_server_started:
+                if require_tcp_server_stress and tcp_server_stress is None:
+                    tcp_server_stress = PassiveTcpStress(peer, stats)
+                    tcp_server_stress.start()
+                elif require_tcp_server and not tcp_server_started:
                     peer.send(encode_tcp(
                         HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
                         HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
                         tcp_server_host_next, 0, TCP_FLAG_SYN))
                     tcp_server_started = True
                     stats["tcp_server_syn"] += 1
+                continue
+            if tcp is not None and tcp_server_stress is not None and \
+                    tcp["src_mac"] == GUEST_MAC and \
+                    tcp["dst_mac"] == HOST_MAC and \
+                    tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["src_port"] == GUEST_TCP_SERVER_PORT:
+                tcp_server_stress.handle(tcp)
                 continue
             if tcp is not None and tcp_server_started and \
                     tcp["src_mac"] == GUEST_MAC and \
@@ -669,6 +845,7 @@ def main() -> int:
     parser.add_argument("--require-udp", action="store_true")
     parser.add_argument("--require-tcp", action="store_true")
     parser.add_argument("--require-tcp-server", action="store_true")
+    parser.add_argument("--require-tcp-server-stress", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
@@ -676,7 +853,8 @@ def main() -> int:
     try:
         return run_peer(args.interface, args.raw_count, args.timeout,
                         args.ready_file, args.stats_file, args.require_udp,
-                        args.require_tcp, args.require_tcp_server)
+                        args.require_tcp, args.require_tcp_server,
+                        args.require_tcp_server_stress)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
