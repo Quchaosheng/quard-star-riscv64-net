@@ -90,12 +90,21 @@ net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
 net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size);
 int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
                    int timeout_ms);
+/* Acquire a waiter before releasing an owning socket lock. */
+/* Each _acquired call requires a successful matching acquire first. */
+net_err_t tcp_recv_acquire(tcp_pcb_t *pcb);
+int tcp_recv_bytes_acquired(tcp_pcb_t *pcb, uint8_t *data, int size,
+                            int timeout_ms);
 net_err_t tcp_retransmit_due(tcp_pcb_t *pcb);
 /* Call from the network worker; repeat after tcp_wait_close to finalize. */
 net_err_t tcp_close(tcp_pcb_t *pcb);
 /* Completion waits track PCB lifetime; callers must not wait on sem fields. */
 net_err_t tcp_wait_connect(tcp_pcb_t *pcb, int timeout_ms);
+net_err_t tcp_wait_connect_acquire(tcp_pcb_t *pcb);
+net_err_t tcp_wait_connect_acquired(tcp_pcb_t *pcb, int timeout_ms);
 net_err_t tcp_wait_close(tcp_pcb_t *pcb, int timeout_ms);
+net_err_t tcp_wait_close_acquire(tcp_pcb_t *pcb);
+net_err_t tcp_wait_close_acquired(tcp_pcb_t *pcb, int timeout_ms);
 net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
                  const ipaddr_t *dest, pktbuf_t *buf);
 net_err_t tcp_header_check(const tcp_hdr_t *header, int size);
