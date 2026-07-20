@@ -30,6 +30,7 @@ void m6c1_mark_tcp_retrans(void);
 void m6c1_mark_tcp_close(void);
 void m6c2_mark_tcp_listen(void);
 void m6c2_mark_tcp_accept(void);
+void m6c2_mark_tcp_echo_complete(void);
 void m6c2_mark_tcp_echo(void);
 void m6c2_mark_tcp_child_close(void);
 void m6c2_mark_tcp_listener_close(void);
