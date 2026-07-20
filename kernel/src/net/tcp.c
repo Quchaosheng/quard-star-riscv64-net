@@ -5,6 +5,10 @@
 #include <timeros/net/protocol.h>
 #include <timeros/net/tools.h>
 
+#ifdef QS_M6C1_TEST
+#include <timeros/selftest.h>
+#endif
+
 typedef struct __attribute__((packed)) _tcp_pseudo_t {
     uint8_t src[IPV4_ADDR_SIZE];
     uint8_t dest[IPV4_ADDR_SIZE];
@@ -771,6 +775,9 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
     pcb->connect_done = SYS_SEM_INVALID;
     nlocker_destroy(&pcb->recv_locker);
     nlocker_destroy(&pcb->state_locker);
+#ifdef QS_M6C1_TEST
+    m6c1_mark_tcp_close();
+#endif
     return NET_ERR_OK;
 }
 
@@ -899,6 +906,9 @@ static tcp_pcb_t *tcp_find_pcb(netif_t *netif, const ipaddr_t *src,
 
 static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 {
+#ifdef QS_M6C1_TEST
+    int retransmission_ack = 0;
+#endif
     nlocker_lock(&pcb->state_locker);
     if ((int32_t)(ack - pcb->snd_una) < 0 ||
         (int32_t)(ack - pcb->snd_nxt) > 0) {
@@ -907,6 +917,10 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
     }
     int complete = pcb->outstanding != 0 && ack == pcb->outstanding_end;
     if (complete) {
+#ifdef QS_M6C1_TEST
+        retransmission_ack = pcb->retry_count != 0 &&
+                            pcb->state == TCP_STATE_ESTABLISHED;
+#endif
         pcb->snd_una = ack;
         if (pcb->state == TCP_STATE_FIN_WAIT_1) {
             pcb->state = pcb->peer_fin_seen ? TCP_STATE_TIME_WAIT :
@@ -918,6 +932,10 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
     nlocker_unlock(&pcb->state_locker);
     if (complete)
         tcp_clear_outstanding(pcb);
+#ifdef QS_M6C1_TEST
+    if (retransmission_ack)
+        m6c1_mark_tcp_retrans();
+#endif
     return NET_ERR_OK;
 }
 
@@ -1079,6 +1097,9 @@ net_err_t tcp_in(netif_t *netif, const ipaddr_t *src,
         nlocker_lock(&pcb->state_locker);
         pcb->state = TCP_STATE_ESTABLISHED;
         nlocker_unlock(&pcb->state_locker);
+#ifdef QS_M6C1_TEST
+        m6c1_mark_tcp();
+#endif
         nlocker_lock(&pcb->state_locker);
         int connect_waiters = pcb->connect_waiters;
         nlocker_unlock(&pcb->state_locker);

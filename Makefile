@@ -42,6 +42,7 @@ test-host:
 	./tests/host/test_m5_stack_contracts.sh
 	./tests/host/test_m5_e2e_contracts.sh
 	./tests/host/test_m5_peer.sh
+	./tests/host/test_m6c1_peer.sh
 	./tests/host/test_m5_smoke_script.sh
 	./tests/host/test_m6a_contracts.sh
 	./tests/host/test_m6a_smoke_script.sh
@@ -54,6 +55,7 @@ test-host:
 	./tests/host/test_m6c1_tcp.sh
 	./tests/host/test_m6c1_retrans.sh
 	./tests/host/test_m6c1_socket.sh
+	./tests/host/test_m6c1_smoke_script.sh
 	./tests/host/test_m6c1_contracts.sh
 
 m1-build: check-env check-sources

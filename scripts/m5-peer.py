@@ -19,8 +19,14 @@ ARP_REPLY = 2
 ICMP_ECHO_REPLY = 0
 ICMP_ECHO_REQUEST = 8
 IPPROTO_UDP = 17
+IPPROTO_TCP = 6
 GUEST_UDP_PORT = 4600
 HOST_UDP_PORT = 4700
+HOST_TCP_PORT = 4800
+TCP_FLAG_FIN = 0x01
+TCP_FLAG_SYN = 0x02
+TCP_FLAG_PSH = 0x08
+TCP_FLAG_ACK = 0x10
 GUEST_MAC = bytes.fromhex("525400123456")
 HOST_MAC = bytes.fromhex("525400123457")
 GUEST_IP = bytes((192, 168, 100, 2))
@@ -200,6 +206,65 @@ def encode_udp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
     return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + udp)
 
 
+def encode_tcp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
+               dst_ip: bytes, src_port: int, dst_port: int,
+               sequence: int, acknowledgement: int, flags: int,
+               payload: bytes = b"", window: int = 4096) -> bytes:
+    tcp = struct.pack("!HHIIBBHHH", src_port, dst_port, sequence,
+                      acknowledgement, 5 << 4, flags, window, 0, 0)
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_TCP)) + \
+        struct.pack("!H", len(tcp) + len(payload))
+    tcp += payload
+    tcp = tcp[:16] + struct.pack("!H", checksum16(pseudo + tcp)) + tcp[18:]
+    total_length = 20 + len(tcp)
+    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, total_length, 3, 0x4000,
+                     64, IPPROTO_TCP, 0, src_ip, dst_ip)
+    ip = ip[:10] + struct.pack("!H", checksum16(ip)) + ip[12:]
+    return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + tcp)
+
+
+def decode_tcp(frame: bytes):
+    if len(frame) < ETHERNET_HEADER_SIZE + 20 + 20:
+        return None
+    if struct.unpack_from("!H", frame, 12)[0] != ETHERTYPE_IPV4:
+        return None
+    ip_offset = ETHERNET_HEADER_SIZE
+    version_ihl = frame[ip_offset]
+    ihl = (version_ihl & 0x0F) * 4
+    total_length = struct.unpack_from("!H", frame, ip_offset + 2)[0]
+    if version_ihl >> 4 != 4 or ihl < 20 or \
+            total_length < ihl + 20 or len(frame) < ip_offset + total_length:
+        return None
+    ip_header = frame[ip_offset:ip_offset + ihl]
+    if checksum16(ip_header) != 0 or ip_header[9] != IPPROTO_TCP:
+        return None
+    src_ip, dst_ip = ip_header[12:16], ip_header[16:20]
+    tcp_offset = ip_offset + ihl
+    tcp = frame[tcp_offset:ip_offset + total_length]
+    data_offset = (tcp[12] >> 4) * 4
+    if data_offset < 20 or data_offset > len(tcp):
+        return None
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_TCP)) + \
+        struct.pack("!H", len(tcp))
+    if checksum16(pseudo + tcp) != 0:
+        return None
+    src_port, dst_port, sequence, acknowledgement = struct.unpack_from(
+        "!HHII", tcp, 0)
+    return {
+        "src_mac": frame[6:12],
+        "dst_mac": frame[:6],
+        "src_ip": src_ip,
+        "dst_ip": dst_ip,
+        "src_port": src_port,
+        "dst_port": dst_port,
+        "seq": sequence,
+        "ack": acknowledgement,
+        "flags": tcp[13],
+        "window": struct.unpack_from("!H", tcp, 14)[0],
+        "payload": tcp[data_offset:],
+    }
+
+
 def payload_checksum(payload: bytes) -> int:
     return sum(payload) & 0xFFFFFFFF
 
@@ -239,7 +304,7 @@ def write_stats(path: str | None, stats: dict, elapsed: float) -> None:
 
 def run_peer(interface: str, raw_count: int, timeout: float,
              ready_file: str | None, stats_file: str | None,
-             require_udp: bool = False) -> int:
+             require_udp: bool = False, require_tcp: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -252,10 +317,24 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "host_echo_replies": 0,
         "udp_requests": 0,
         "udp_replies": 0,
+        "tcp_syn": 0,
+        "tcp_data": 0,
+        "tcp_retransmissions": 0,
+        "tcp_fin": 0,
+        "tcp_outstanding": 0,
     }
     expected_raw = 0
     host_arp_request_sent = False
     host_echo_request_sent = False
+    tcp_tuple = None
+    tcp_guest_isn = 0
+    tcp_guest_data_end = 0
+    tcp_host_next = 0
+    tcp_payload = b""
+    tcp_handshake_ack_seen = False
+    tcp_data_seen = False
+    tcp_echo_sent = False
+    tcp_fin_sent = False
 
     def complete() -> bool:
         return (
@@ -269,6 +348,13 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             (not require_udp or (
                 stats["udp_requests"] >= 1 and
                 stats["udp_replies"] >= 1
+            )) and
+            (not require_tcp or (
+                stats["tcp_syn"] >= 1 and
+                stats["tcp_data"] >= 1 and
+                stats["tcp_retransmissions"] >= 1 and
+                stats["tcp_fin"] >= 1 and
+                stats["tcp_outstanding"] == 0
             ))
         )
 
@@ -332,6 +418,88 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                                      HOST_UDP_PORT, GUEST_UDP_PORT, udp[4]))
                 stats["udp_replies"] += 1
                 continue
+            tcp = decode_tcp(frame)
+            if tcp is not None and tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["dst_port"] == HOST_TCP_PORT:
+                flags = tcp["flags"]
+                current_tuple = (tcp["src_port"], tcp["dst_port"])
+                if flags == TCP_FLAG_SYN:
+                    if tcp_tuple is not None or tcp["ack"] != 0 or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected second TCP SYN")
+                    tcp_tuple = current_tuple
+                    tcp_guest_isn = tcp["seq"]
+                    tcp_guest_data_end = tcp_guest_isn + 1
+                    tcp_host_next = 9000 + 1
+                    stats["tcp_syn"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], 9000,
+                        tcp_guest_data_end, TCP_FLAG_SYN | TCP_FLAG_ACK))
+                    continue
+                if tcp_tuple != current_tuple:
+                    raise ValueError("unexpected TCP tuple")
+                if not tcp_handshake_ack_seen:
+                    if flags != TCP_FLAG_ACK or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or tcp["payload"]:
+                        raise ValueError("unexpected TCP handshake ACK")
+                    tcp_handshake_ack_seen = True
+                    continue
+                if not tcp_data_seen:
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or \
+                            not tcp["payload"]:
+                        raise ValueError("unexpected TCP data segment")
+                    tcp_data_seen = True
+                    tcp_payload = tcp["payload"]
+                    tcp_guest_data_end = tcp["seq"] + len(tcp_payload)
+                    stats["tcp_data"] += 1
+                    stats["tcp_outstanding"] = 1
+                    continue
+                if not tcp_echo_sent:
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_isn + 1 or \
+                            tcp["ack"] != tcp_host_next or \
+                            tcp["payload"] != tcp_payload:
+                        raise ValueError("unexpected TCP retransmission")
+                    stats["tcp_retransmissions"] += 1
+                    stats["tcp_outstanding"] = 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next,
+                        tcp_guest_data_end,
+                        TCP_FLAG_PSH | TCP_FLAG_ACK, tcp_payload))
+                    tcp_host_next += len(tcp_payload)
+                    tcp_echo_sent = True
+                    continue
+                if not tcp_fin_sent:
+                    if flags == TCP_FLAG_ACK and \
+                            tcp["seq"] == tcp_guest_data_end and \
+                            tcp["ack"] == tcp_host_next and not tcp["payload"]:
+                        stats["tcp_outstanding"] = 0
+                        continue
+                    if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or tcp["payload"]:
+                        raise ValueError("unexpected TCP FIN")
+                    stats["tcp_fin"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next,
+                        tcp["seq"] + 1, TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    tcp_host_next += 1
+                    tcp_fin_sent = True
+                    stats["tcp_outstanding"] = 1
+                    continue
+                if flags != TCP_FLAG_ACK or \
+                        tcp["seq"] != tcp_guest_data_end + 1 or \
+                        tcp["ack"] != tcp_host_next or tcp["payload"]:
+                    raise ValueError("unexpected TCP final ACK")
+                stats["tcp_outstanding"] = 0
+                continue
             if event is None:
                 continue
             if event["src_mac"] == GUEST_MAC and \
@@ -372,13 +540,15 @@ def main() -> int:
     parser.add_argument("--ready-file")
     parser.add_argument("--stats-file")
     parser.add_argument("--require-udp", action="store_true")
+    parser.add_argument("--require-tcp", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
 
     try:
         return run_peer(args.interface, args.raw_count, args.timeout,
-                        args.ready_file, args.stats_file, args.require_udp)
+                        args.ready_file, args.stats_file, args.require_udp,
+                        args.require_tcp)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
