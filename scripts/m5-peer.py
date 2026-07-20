@@ -698,6 +698,17 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     tcp_fin_sent = True
                     stats["tcp_outstanding"] = 1
                     continue
+                if require_tcp_server_stress and \
+                        flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                        tcp["seq"] == tcp_guest_data_end and \
+                        tcp["ack"] == tcp_host_next - 1 and \
+                        not tcp["payload"]:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next - 1,
+                        tcp_guest_data_end + 1,
+                        TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    continue
                 if flags != TCP_FLAG_ACK or \
                         tcp["seq"] != tcp_guest_data_end + 1 or \
                         tcp["ack"] != tcp_host_next or tcp["payload"]:
