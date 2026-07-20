@@ -17,7 +17,8 @@ peer_pid=
 smoke_pid=
 
 if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ] && \
-  [ "$test_name" != m6b-smoke ] && [ "$test_name" != m6c1-smoke ]; then
+  [ "$test_name" != m6b-smoke ] && [ "$test_name" != m6c1-smoke ] && \
+  [ "$test_name" != m6c2-smoke ]; then
   echo "error: unsupported M5 test name $test_name" >&2
   exit 1
 fi
@@ -54,6 +55,8 @@ if [ "$test_name" = m6b-smoke ]; then
   set -- "$@" --require-udp
 elif [ "$test_name" = m6c1-smoke ]; then
   set -- "$@" --require-udp --require-tcp
+elif [ "$test_name" = m6c2-smoke ]; then
+  set -- "$@" --require-udp --require-tcp --require-tcp-server
 fi
 peer_needs_sudo=0
 if [ "${QS_FORCE_PEER_SUDO:-0}" = 1 ]; then
@@ -96,14 +99,18 @@ export QS_TEST_NAME=$test_name
 export QS_TAP_IFACE=$iface
 extra_m6_markers=
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
-  [ "$test_name" = m6c1-smoke ]; then
+  [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ]; then
   extra_m6_markers='QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK'
 fi
-if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ]; then
+if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
+  [ "$test_name" = m6c2-smoke ]; then
   extra_m6_markers="$extra_m6_markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
 fi
-if [ "$test_name" = m6c1-smoke ]; then
+if [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ]; then
   extra_m6_markers="$extra_m6_markers QS:M6C1_TCP_OK QS:M6C1_TCP_RETRANS_OK QS:M6C1_TCP_CLOSE_OK"
+fi
+if [ "$test_name" = m6c2-smoke ]; then
+  extra_m6_markers="$extra_m6_markers QS:M6C2_LISTEN_OK QS:M6C2_ACCEPT_OK QS:M6C2_ECHO_OK QS:M6C2_CLOSE_OK"
 fi
 export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK $extra_m6_markers QS:TEST_PASS:$test_name"
 export QS_SMOKE_TIMEOUT=${QS_SMOKE_TIMEOUT:-60}
@@ -131,13 +138,17 @@ if [ "$peer_status" -ne 0 ]; then
   exit 1
 fi
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
-  [ "$test_name" = m6c1-smoke ]; then
+  [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ]; then
   markers="QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK QS:TEST_PASS:$test_name"
-  if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ]; then
+  if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
+    [ "$test_name" = m6c2-smoke ]; then
     markers="$markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
   fi
-  if [ "$test_name" = m6c1-smoke ]; then
+  if [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ]; then
     markers="$markers QS:M6C1_TCP_OK QS:M6C1_TCP_RETRANS_OK QS:M6C1_TCP_CLOSE_OK"
+  fi
+  if [ "$test_name" = m6c2-smoke ]; then
+    markers="$markers QS:M6C2_LISTEN_OK QS:M6C2_ACCEPT_OK QS:M6C2_ECHO_OK QS:M6C2_CLOSE_OK"
   fi
   for marker in $markers; do
     count=$(tr -d '\000\r' < "$out/qemu.log" | grep -Fxc "$marker" || true)
@@ -154,6 +165,22 @@ if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
     '
   then
     echo 'error: TCP close marker must precede the final M6C1 pass' >&2
+    exit 1
+  fi
+  if [ "$test_name" = m6c2-smoke ] && ! tr -d '\000\r' < "$out/qemu.log" | \
+    awk '
+      $0 == "QS:M6C2_LISTEN_OK" { listen_line = NR }
+      $0 == "QS:M6C2_ACCEPT_OK" { accept_line = NR }
+      $0 == "QS:M6C2_ECHO_OK" { echo_line = NR }
+      $0 == "QS:M6C2_CLOSE_OK" { close_line = NR }
+      $0 == "QS:TEST_PASS:m6c2-smoke" { pass_line = NR }
+      END {
+        exit !(listen_line < accept_line && accept_line < echo_line &&
+               echo_line < close_line && close_line < pass_line)
+      }
+    '
+  then
+    echo 'error: M6C2 markers must follow listen/accept/echo/close/pass order' >&2
     exit 1
   fi
 fi
@@ -176,16 +203,25 @@ required = (
     data.get("guest_echo_replies", 0) >= 1 and
     data.get("host_echo_requests", 0) >= 1 and
     data.get("host_echo_replies", 0) >= 1 and
-    (sys.argv[3] not in ("m6b-smoke", "m6c1-smoke") or (
+    (sys.argv[3] not in ("m6b-smoke", "m6c1-smoke", "m6c2-smoke") or (
         data.get("udp_requests", 0) >= 1 and
         data.get("udp_replies", 0) >= 1
     )) and
-    (sys.argv[3] != "m6c1-smoke" or (
+    (sys.argv[3] not in ("m6c1-smoke", "m6c2-smoke") or (
         data.get("tcp_syn", 0) >= 1 and
         data.get("tcp_data", 0) >= 1 and
         data.get("tcp_retransmissions", 0) >= 1 and
         data.get("tcp_fin", 0) >= 1 and
         data.get("tcp_outstanding", -1) == 0
+    )) and
+    (sys.argv[3] != "m6c2-smoke" or (
+        data.get("tcp_server_syn", 0) >= 1 and
+        data.get("tcp_server_handshakes", 0) >= 1 and
+        data.get("tcp_server_data", 0) >= 1 and
+        data.get("tcp_server_echo", 0) >= 1 and
+        data.get("tcp_server_retransmissions", 0) >= 1 and
+        data.get("tcp_server_fin", 0) >= 1 and
+        data.get("tcp_server_outstanding", -1) == 0
     ))
 )
 raise SystemExit(0 if required else 1)
@@ -199,6 +235,8 @@ if [ "$test_name" = m6b-smoke ]; then
   echo "PASS: $test_name TAP ARP/ICMP/UDP acceptance"
 elif [ "$test_name" = m6c1-smoke ]; then
   echo "PASS: $test_name TAP ARP/ICMP/UDP/TCP acceptance"
+elif [ "$test_name" = m6c2-smoke ]; then
+  echo "PASS: $test_name TAP ARP/ICMP/UDP/active/passive TCP acceptance"
 else
   echo "PASS: $test_name TAP ARP/ICMP acceptance"
 fi
