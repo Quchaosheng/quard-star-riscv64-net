@@ -60,6 +60,7 @@ typedef struct _tcp_pcb_t {
     uint32_t snd_una;
     uint32_t snd_nxt;
     uint32_t rcv_nxt;
+    int peer_fin_seen;
     uint16_t window;
     pktbuf_t *outstanding;
     uint32_t outstanding_end;
