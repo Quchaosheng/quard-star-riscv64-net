@@ -29,6 +29,7 @@ int main(void)
 {
     tcp_pcb_t *pcbs[TCP_PCB_MAX + 1] = { 0 };
 
+    assert(TCP_PCB_MAX == 12);
     assert(net_sys_init() == NET_ERR_OK);
     assert(pktbuf_init() == NET_ERR_OK);
     assert(net_timer_init() == NET_ERR_OK);
