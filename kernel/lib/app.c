@@ -69,6 +69,25 @@ int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length)
     return syscall(__NR_bind, fd, (reg_t)(uintptr_t)address, address_length);
 }
 
+int sys_connect(int fd, const net_sockaddr_in *address,
+                size_t address_length)
+{
+    return syscall(__NR_connect, fd, (reg_t)(uintptr_t)address,
+                   address_length);
+}
+
+int sys_send(int fd, const void *data, size_t length, int flags)
+{
+    net_send_args args = { data, length, flags };
+    return syscall(__NR_send, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
+int sys_recv(int fd, void *data, size_t length, int flags)
+{
+    net_recv_args args = { data, length, flags };
+    return syscall(__NR_recv, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
 int sys_sendto(int fd, const void *data, size_t length, int flags,
                const net_sockaddr_in *address, size_t address_length)
 {

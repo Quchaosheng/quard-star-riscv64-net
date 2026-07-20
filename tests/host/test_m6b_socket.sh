@@ -25,6 +25,7 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
   "$root/kernel/src/net/loop.c" \
   "$root/kernel/src/net/timer.c" \
   "$root/kernel/src/net/udp.c" \
+  "$root/kernel/src/net/tcp.c" \
   "$root/kernel/src/net/socket.c" \
   -o "$tmp/test_m6b_socket"
 ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \

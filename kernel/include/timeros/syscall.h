@@ -17,11 +17,15 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3);
 #define __NR_execve 221
 #define __NR_socket 198
 #define __NR_bind 200
+#define __NR_connect 203
 #define __NR_sendto 206
 #define __NR_recvfrom 207
+#define __NR_send 208
+#define __NR_recv 209
 #define __NR_close 57
 
 #define NET_AF_INET 2
+#define NET_SOCK_STREAM 1
 #define NET_SOCK_DGRAM 2
 
 typedef struct net_sockaddr_in {
@@ -49,6 +53,18 @@ typedef struct net_recvfrom_args {
     int timeout_ms;
 } net_recvfrom_args;
 
+typedef struct net_send_args {
+    const char *data;
+    size_t length;
+    int flags;
+} net_send_args;
+
+typedef struct net_recv_args {
+    char *data;
+    size_t length;
+    int flags;
+} net_recv_args;
+
 uint64_t sys_write(size_t fd, const char* buf, size_t len);
 uint64_t sys_yield();
 uint64_t sys_gettime();
@@ -60,6 +76,10 @@ int sys_exit(u64 exit_code);
 int sys_waitpid();
 int sys_socket(int domain, int type, int protocol);
 int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length);
+int sys_connect(int fd, const net_sockaddr_in *address,
+                size_t address_length);
+int sys_send(int fd, const void *data, size_t length, int flags);
+int sys_recv(int fd, void *data, size_t length, int flags);
 int sys_sendto(int fd, const void *data, size_t length, int flags,
                const net_sockaddr_in *address, size_t address_length);
 int sys_recvfrom(int fd, void *data, size_t length, int flags,

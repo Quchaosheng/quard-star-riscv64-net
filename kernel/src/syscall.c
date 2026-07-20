@@ -29,7 +29,9 @@ typedef struct _socket_exec_t {
 enum {
     SOCKET_EXEC_OPEN,
     SOCKET_EXEC_BIND,
+    SOCKET_EXEC_CONNECT,
     SOCKET_EXEC_SEND,
+    SOCKET_EXEC_SENDTO,
     SOCKET_EXEC_CLOSE,
 };
 
@@ -41,7 +43,15 @@ static void socket_exec(void *arg)
         request->result = net_socket_open(request->type);
     else if (request->op == SOCKET_EXEC_BIND)
         request->result = net_socket_bind(request->handle, request->port);
+    else if (request->op == SOCKET_EXEC_CONNECT)
+        request->result = net_socket_connect_start(request->handle,
+                                                    net_stack_default(),
+                                                    &request->address,
+                                                    request->port);
     else if (request->op == SOCKET_EXEC_SEND)
+        request->result = net_socket_send(request->handle, request->data,
+                                          request->length);
+    else if (request->op == SOCKET_EXEC_SENDTO)
         request->result = net_socket_sendto(request->handle,
                                              net_stack_default(),
                                              &request->address,
@@ -230,13 +240,65 @@ int __sys_wait()
 
 static int __sys_socket(int domain, int type, int protocol)
 {
-    if (domain != NET_AF_INET || type != NET_SOCK_DGRAM || protocol != 0)
+    if (domain != NET_AF_INET || protocol != 0 ||
+        (type != NET_SOCK_DGRAM && type != NET_SOCK_STREAM))
         return NET_ERR_NOT_SUPPORT;
     socket_exec_t request = {
         .op = SOCKET_EXEC_OPEN,
-        .type = NET_SOCKET_UDP,
+        .type = type == NET_SOCK_DGRAM ? NET_SOCKET_UDP : NET_SOCKET_TCP,
     };
     return socket_exec_wait(&request);
+}
+
+static int __sys_connect(int handle,
+                         const net_sockaddr_in *user_address,
+                         size_t address_length)
+{
+    net_sockaddr_in address;
+    if (copy_socket_address(&address, user_address, address_length) < 0)
+        return NET_ERR_PARAM;
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_CONNECT,
+        .handle = handle,
+        .port = x_ntohs(address.port),
+    };
+    request.address.q_addr = address.address;
+    int result = socket_exec_wait(&request);
+    return result < 0 ? result : net_socket_wait_connect(handle, 0);
+}
+
+static int __sys_send(int handle, const net_send_args *user_args)
+{
+    net_send_args args;
+    uint8_t data[TCP_MSS];
+    if (copy_from_user(&args, (const char *)user_args, sizeof(args)) < 0 ||
+        args.flags != 0 || args.length == 0 || args.length > sizeof(data) ||
+        copy_from_user(data, args.data, args.length) < 0)
+        return NET_ERR_PARAM;
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_SEND,
+        .handle = handle,
+        .data = data,
+        .length = (int)args.length,
+    };
+    int result = socket_exec_wait(&request);
+    return result < 0 ? result : (int)args.length;
+}
+
+static int __sys_recv(int handle, const net_recv_args *user_args)
+{
+    net_recv_args args;
+    uint8_t data[TCP_MSS];
+    if (copy_from_user(&args, (const char *)user_args, sizeof(args)) < 0 ||
+        args.flags != 0 || args.length == 0 || args.length > sizeof(data) ||
+        args.data == 0 || user_range_check(args.data, args.length, PTE_W) < 0)
+        return NET_ERR_PARAM;
+    int result = net_socket_recv(handle, data, (int)args.length, 0);
+    if (result < 0)
+        return result;
+    if (copy_to_user(args.data, data, (size_t)result) < 0)
+        return NET_ERR_PARAM;
+    return result;
 }
 
 static int __sys_bind(int handle, const net_sockaddr_in *user_address,
@@ -265,7 +327,7 @@ static int __sys_sendto(int handle, const net_sendto_args *user_args)
         copy_from_user(data, args.data, args.length) < 0)
         return NET_ERR_PARAM;
     socket_exec_t request = {
-        .op = SOCKET_EXEC_SEND,
+        .op = SOCKET_EXEC_SENDTO,
         .handle = handle,
         .port = x_ntohs(address.port),
         .data = data,
@@ -340,13 +402,20 @@ static int __sys_close(int handle)
         .handle = handle,
     };
     int result = socket_exec_wait(&request);
+    int wait_result = NET_ERR_OK;
+    while (result == NET_ERR_NONE) {
+        int err = net_socket_wait_close(handle, 0);
+        if (err < 0 && wait_result == NET_ERR_OK)
+            wait_result = err;
+        result = socket_exec_wait(&request);
+    }
 #ifdef QS_M6B_TEST
     if (result == NET_ERR_OK && m6b_timeout_handle == handle) {
         m6b_mark_udp_timeout();
         m6b_timeout_handle = -1;
     }
 #endif
-    return result;
+    return result < 0 ? result : wait_result;
 }
 
 reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
@@ -373,6 +442,12 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 		return __sys_socket((int)arg1, (int)arg2, (int)arg3);
 	case __NR_bind:
 		return __sys_bind((int)arg1, (const net_sockaddr_in *)arg2, arg3);
+	case __NR_connect:
+		return __sys_connect((int)arg1, (const net_sockaddr_in *)arg2, arg3);
+	case __NR_send:
+		return __sys_send((int)arg1, (const net_send_args *)arg2);
+	case __NR_recv:
+		return __sys_recv((int)arg1, (const net_recv_args *)arg2);
 	case __NR_sendto:
 		return __sys_sendto((int)arg1, (const net_sendto_args *)arg2);
 	case __NR_recvfrom:
