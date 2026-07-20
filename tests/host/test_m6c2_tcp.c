@@ -8,6 +8,7 @@
 #include <timeros/net/tcp.h>
 #include <timeros/net/timer.h>
 #include <timeros/net/tools.h>
+#include <timeros/selftest.h>
 
 typedef struct _captured_segment_t {
     uint16_t src_port;
@@ -22,6 +23,14 @@ typedef struct _captured_segment_t {
 static captured_segment_t output;
 static int output_count;
 static net_err_t next_output_error;
+static int child_close_markers;
+static int listener_close_markers;
+
+void m6c2_mark_tcp_listen(void) { }
+void m6c2_mark_tcp_accept(void) { }
+void m6c2_mark_tcp_echo(void) { }
+void m6c2_mark_tcp_child_close(void) { child_close_markers++; }
+void m6c2_mark_tcp_listener_close(void) { listener_close_markers++; }
 
 net_err_t ipv4_register_handler(uint8_t protocol,
                                 ipv4_input_handler_t handler)
@@ -215,6 +224,8 @@ static void test_listen_handshake_and_accept(netif_t *netif)
     ipaddr_t remote;
     make_remote(&remote, 20);
     int before = output_count;
+    int child_before = child_close_markers;
+    int listener_before = listener_close_markers;
     tcp_pcb_t *listener = make_listener(netif, 4);
     assert(output_count == before);
 
@@ -264,8 +275,12 @@ static void test_listen_handshake_and_accept(netif_t *netif)
     assert(listener->accept_waiters == 0 && child->accept_pins == 0);
 
     close_attached(child);
+    assert(child_close_markers == child_before + 1);
+    assert(listener_close_markers == listener_before);
     assert(tcp_close(listener) == NET_ERR_OK);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(listener_close_markers == listener_before + 1);
+    assert(child_close_markers == child_before + 1);
 }
 
 static void test_backlog_limit(netif_t *netif)
@@ -293,6 +308,7 @@ static void test_half_open_retry_release(netif_t *netif)
     ipaddr_t remote;
     make_remote(&remote, 25);
     tcp_pcb_t *listener = make_listener(netif, 1);
+    int child_before = child_close_markers;
     (void)send_syn(netif, &remote, 5200, 3000);
 
     for (int i = 0; i < TCP_RETRY_MAX; i++)
@@ -300,6 +316,7 @@ static void test_half_open_retry_release(netif_t *netif)
     assert(listener->pending_count == 0);
     assert(listener->accept_count == 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(child_close_markers == child_before);
     assert_packet_pool_free();
 
     tcp_pcb_t *extra[TCP_PCB_MAX - 1] = { 0 };
@@ -381,6 +398,8 @@ static void test_direct_close_unaccepted_children(netif_t *netif)
     make_remote(&first, 28);
     make_remote(&second, 29);
     tcp_pcb_t *listener = make_listener(netif, 2);
+    int child_before = child_close_markers;
+    int listener_before = listener_close_markers;
     tcp_pcb_t *held[TCP_PCB_MAX - 1] = { 0 };
     for (int i = 0; i < TCP_PCB_MAX - 1; i++)
         assert(tcp_open(&held[i]) == NET_ERR_OK);
@@ -395,6 +414,7 @@ static void test_direct_close_unaccepted_children(netif_t *netif)
     assert(tcp_close(half_open) == NET_ERR_OK);
     assert(listener->pending_count == 0 && listener->accept_count == 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(child_close_markers == child_before);
 
     tcp_pcb_t *child = complete_handshake(listener, netif, &second, 5401,
                                           7000);
@@ -404,12 +424,15 @@ static void test_direct_close_unaccepted_children(netif_t *netif)
     assert(listener->accept_count == 0 && listener->pending_count == 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(!child->opened);
+    assert(child_close_markers == child_before);
     for (int i = 0; i < TCP_PCB_MAX - 1; i++) {
         if (held[i] != 0)
             assert(tcp_close(held[i]) == NET_ERR_OK);
     }
     assert(tcp_close(listener) == NET_ERR_OK);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(listener_close_markers == listener_before + 1);
+    assert(child_close_markers == child_before);
     release_all_slots();
 }
 
@@ -420,6 +443,7 @@ static void test_peek_pins_detached_child(netif_t *netif)
     make_remote(&first, 26);
     make_remote(&replacement_remote, 27);
     tcp_pcb_t *listener = make_listener(netif, 1);
+    int child_before = child_close_markers;
     queue_handshake(netif, &first, 5600, 9000);
 
     assert(tcp_accept_acquire(listener) == NET_ERR_OK);
@@ -440,6 +464,7 @@ static void test_peek_pins_detached_child(netif_t *netif)
                  TCP_FLAG_FIN | TCP_FLAG_ACK) == NET_ERR_OK);
     assert(listener->accept_count == 0 && listener->pending_count == 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(child_close_markers == child_before);
 
     tcp_pcb_t *held[TCP_PCB_MAX - 2] = { 0 };
     for (int i = 0; i < TCP_PCB_MAX - 2; i++) {
@@ -455,11 +480,13 @@ static void test_peek_pins_detached_child(netif_t *netif)
     assert(tcp_accept_release_child_acquired(listener, stale) == NET_ERR_OK);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(stale->opened && stale->accept_pins == 1);
+    assert(child_close_markers == child_before);
     assert(tcp_open(&probe) == NET_ERR_MEM);
     assert(tcp_accept_release_child_acquired(listener, stale) == NET_ERR_OK);
     assert(tcp_accept_release_child_acquired(listener, stale) < 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(!stale->opened);
+    assert(child_close_markers == child_before);
 
     queue_handshake(netif, &replacement_remote, 5601, 9100);
     assert(tcp_accept_acquire(listener) == NET_ERR_OK);

@@ -5,7 +5,7 @@
 #include <timeros/net/protocol.h>
 #include <timeros/net/tools.h>
 
-#ifdef QS_M6C1_TEST
+#if defined(QS_M6C1_TEST) || defined(QS_M6C2_TEST)
 #include <timeros/selftest.h>
 #endif
 
@@ -306,6 +306,7 @@ static void tcp_reset_connection(tcp_pcb_t *pcb)
     pcb->accept_pins = 0;
     pcb->bound = 0;
     pcb->passive = 0;
+    pcb->accepted = 0;
     pcb->close_requested = 0;
 }
 
@@ -576,6 +577,9 @@ net_err_t tcp_listen(tcp_pcb_t *pcb, int backlog)
     pcb->state = TCP_STATE_LISTEN;
     nlocker_unlock(&pcb->state_locker);
     nlocker_unlock(&table_locker);
+#ifdef QS_M6C2_TEST
+    m6c2_mark_tcp_listen();
+#endif
     return NET_ERR_OK;
 }
 
@@ -682,6 +686,7 @@ net_err_t tcp_accept_commit_acquired(tcp_pcb_t *listener,
         if (valid) {
             child->accept_pins--;
             child->socket_attached = 1;
+            child->accepted = 1;
             child->listener = 0;
             detached_listeners[child_slot] = child->accept_pins > 0 ?
                                              listener : 0;
@@ -1208,6 +1213,11 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
         return NET_ERR_PARAM;
     int listener_children = tcp_listener_has_children_locked(pcb);
     nlocker_lock(&pcb->state_locker);
+#ifdef QS_M6C2_TEST
+    int m6c2_listener = pcb->state == TCP_STATE_LISTEN;
+    int m6c2_child = pcb->passive != 0 && pcb->accepted != 0 &&
+                     pcb->listener == 0;
+#endif
     int releasable = pcb->release_pending &&
                      !pcb->socket_attached &&
                      pcb->listener == 0 && pcb->accept_waiters == 0 &&
@@ -1249,6 +1259,12 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
 #endif
     detached_listeners[slot] = 0;
     pcbs[slot] = 0;
+#ifdef QS_M6C2_TEST
+    if (m6c2_child)
+        m6c2_mark_tcp_child_close();
+    if (m6c2_listener)
+        m6c2_mark_tcp_listener_close();
+#endif
     return NET_ERR_OK;
 }
 
@@ -1514,6 +1530,9 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 #ifdef QS_M6C1_TEST
     int retransmission_ack = 0;
 #endif
+#ifdef QS_M6C2_TEST
+    int passive_echo_ack = 0;
+#endif
     nlocker_lock(&pcb->state_locker);
     if ((int32_t)(ack - pcb->snd_una) < 0 ||
         (int32_t)(ack - pcb->snd_nxt) > 0) {
@@ -1525,6 +1544,11 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 #ifdef QS_M6C1_TEST
         retransmission_ack = pcb->retry_count != 0 &&
                             pcb->state == TCP_STATE_ESTABLISHED;
+#endif
+#ifdef QS_M6C2_TEST
+        passive_echo_ack = pcb->retry_count != 0 && pcb->passive != 0 &&
+                           pcb->listener == 0 &&
+                           pcb->state == TCP_STATE_ESTABLISHED;
 #endif
         pcb->snd_una = ack;
         start_fin = pcb->close_requested &&
@@ -1550,6 +1574,10 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 #ifdef QS_M6C1_TEST
     if (retransmission_ack)
         m6c1_mark_tcp_retrans();
+#endif
+#ifdef QS_M6C2_TEST
+    if (passive_echo_ack)
+        m6c2_mark_tcp_echo();
 #endif
     return NET_ERR_OK;
 }

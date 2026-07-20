@@ -1,5 +1,9 @@
 #include <timeros/net/socket.h>
 
+#ifdef QS_M6C2_TEST
+#include <timeros/selftest.h>
+#endif
+
 typedef struct _socket_entry_t {
     union {
         udp_pcb_t udp;
@@ -258,6 +262,9 @@ int net_socket_accept_commit(net_socket_accept_t *accept)
     int handle = ((int)accepted_entry->generation << 8) | slot;
     socket_accept_clear(accept);
     nlocker_unlock(&socket_locker);
+#ifdef QS_M6C2_TEST
+    m6c2_mark_tcp_accept();
+#endif
     return handle;
 }
 
