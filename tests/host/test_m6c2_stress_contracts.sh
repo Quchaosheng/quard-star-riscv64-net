@@ -24,6 +24,9 @@ for text in \
   grep -Fq "$text" "$source_file" || fail "missing $text"
 done
 
+grep -Fq 'QS_STRESS_TIMEOUT:-300' "$root/scripts/m6c2-stress.sh" || \
+  fail 'M6C2 stress must allow the 120-second cumulative gate and TCP load'
+
 for text in \
   'QS_ALLOC_ITERATIONS=50000' \
   'QS_MIGRATION_TARGET=10000' \
