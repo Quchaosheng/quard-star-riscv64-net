@@ -87,6 +87,16 @@ int main(void)
     assert(ipaddr_from_str(&remote, "192.0.2.20") == NET_ERR_OK);
     netif.state = NETIF_ACTIVE;
 
+    int datagram = net_socket_open(NET_SOCKET_UDP);
+    assert(datagram >= 0);
+    assert(net_socket_connect_start(datagram, &netif, &remote, 4800) ==
+           NET_ERR_PARAM);
+    assert(net_socket_send(datagram, payload, sizeof(payload)) ==
+           NET_ERR_PARAM);
+    assert(net_socket_recv(datagram, received, sizeof(received), -1) ==
+           NET_ERR_PARAM);
+    assert(net_socket_close(datagram) == NET_ERR_OK);
+
     int handle = net_socket_open(NET_SOCKET_TCP);
     assert(handle >= 0);
     assert(net_socket_bind(handle, 4000) == NET_ERR_PARAM);
