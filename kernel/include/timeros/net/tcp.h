@@ -19,6 +19,7 @@
 #define TCP_RETRANS_MS 500
 #define TCP_RETRY_MAX 5
 #define TCP_TIME_WAIT_MS 1000
+#define TCP_ACCEPT_MAX 4
 
 #define TCP_FLAG_FIN 0x01
 #define TCP_FLAG_SYN 0x02
@@ -41,14 +42,18 @@ typedef struct __attribute__((packed)) _tcp_hdr_t {
 
 typedef enum _tcp_state_t {
     TCP_STATE_CLOSED,
+    TCP_STATE_LISTEN,
     TCP_STATE_SYN_SENT,
+    TCP_STATE_SYN_RECEIVED,
     TCP_STATE_ESTABLISHED,
     TCP_STATE_FIN_WAIT_1,
     TCP_STATE_FIN_WAIT_2,
     TCP_STATE_TIME_WAIT,
 } tcp_state_t;
 
-typedef struct _tcp_pcb_t {
+typedef struct _tcp_pcb_t tcp_pcb_t;
+
+struct _tcp_pcb_t {
     int opened;
     netif_t *netif;
     ipaddr_t local_ip;
@@ -75,20 +80,46 @@ typedef struct _tcp_pcb_t {
     int connect_waiters;
     int recv_waiters;
     int close_waiters;
+    tcp_pcb_t *listener;
+    tcp_pcb_t *accept_queue[TCP_ACCEPT_MAX];
+    int accept_head;
+    int accept_count;
+    int pending_count;
+    int backlog;
+    int accept_waiters;
+    int accept_pins;
+    int bound;
+    int passive;
+    int close_requested;
     int release_pending;
     int socket_attached;
     sys_sem_t connect_done;
     sys_sem_t recv_done;
     sys_sem_t close_done;
+    sys_sem_t accept_done;
     net_err_t error;
     int terminal_notified;
-} tcp_pcb_t;
+};
 
 net_err_t tcp_init(void);
 net_err_t tcp_open(tcp_pcb_t **result);
 /* Socket-owned PCBs remain pooled until the matching detach succeeds. */
 net_err_t tcp_socket_open(tcp_pcb_t **result);
 net_err_t tcp_socket_detach(tcp_pcb_t *pcb);
+net_err_t tcp_bind(tcp_pcb_t *pcb, netif_t *netif,
+                   const ipaddr_t *local, uint16_t port);
+net_err_t tcp_listen(tcp_pcb_t *pcb, int backlog);
+net_err_t tcp_accept_acquire(tcp_pcb_t *listener);
+net_err_t tcp_accept_peek_acquired(tcp_pcb_t *listener,
+                                   tcp_pcb_t **child, ipaddr_t *remote,
+                                   uint16_t *remote_port, int timeout_ms);
+net_err_t tcp_accept_commit_acquired(tcp_pcb_t *listener,
+                                     tcp_pcb_t *child);
+/* Release an acquired waiter only when peek did not return a child. */
+net_err_t tcp_accept_release_acquired(tcp_pcb_t *listener);
+/* Abort an acquired waiter after a successful peek of child. */
+net_err_t tcp_accept_release_child_acquired(tcp_pcb_t *listener,
+                                            tcp_pcb_t *child);
 net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
                             const ipaddr_t *remote, uint16_t remote_port);
 net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size);
