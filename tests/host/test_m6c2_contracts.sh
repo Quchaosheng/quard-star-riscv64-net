@@ -12,9 +12,11 @@ grep -qx 'export QS_M6C2_TEST=1' "$root/scripts/m6c2-build.sh" || \
   fail 'missing M6C2 build flag'
 grep -q 'm6c1-build.sh' "$root/scripts/m6c2-build.sh" || \
   fail 'M6C2 build must reuse M6C1'
-grep -qx 'export QS_STAGE=m6c2' "$root/scripts/m6c2-smoke.sh" || \
+grep -Eq '^[[:space:]]*export QS_STAGE=m6c2$' \
+  "$root/scripts/m6c2-smoke.sh" || \
   fail 'missing M6C2 smoke stage'
-grep -qx 'export QS_TEST_NAME=m6c2-smoke' "$root/scripts/m6c2-smoke.sh" || \
+grep -Eq '^[[:space:]]*export QS_TEST_NAME=m6c2-smoke$' \
+  "$root/scripts/m6c2-smoke.sh" || \
   fail 'missing M6C2 smoke name'
 grep -q 'm6c1-smoke.sh' "$root/scripts/m6c2-smoke.sh" || \
   fail 'M6C2 smoke must reuse M6C1'
