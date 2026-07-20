@@ -24,6 +24,14 @@ for text in \
   grep -Fq "$text" "$source_file" || fail "missing $text"
 done
 
+for text in \
+  'QS_ALLOC_ITERATIONS=50000' \
+  'QS_MIGRATION_TARGET=10000' \
+  'QS_STRESS_MIN_TICKS=1200000000ULL'; do
+  grep -Fq "$text" "$root/scripts/m6b-build.sh" || \
+    fail "missing cumulative stress build setting $text"
+done
+
 poll=$(awk '
   /^void m2c_selftest_poll\(void\)$/ { body = 1 }
   body { print }
