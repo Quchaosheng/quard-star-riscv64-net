@@ -17,6 +17,7 @@ typedef struct __attribute__((packed)) _tcp_pseudo_t {
     uint16_t length;
 } tcp_pseudo_t;
 
+static tcp_pcb_t pcb_storage[TCP_PCB_MAX];
 static tcp_pcb_t *pcbs[TCP_PCB_MAX];
 static net_timer_t release_timers[TCP_PCB_MAX];
 static nlocker_t table_locker;
@@ -203,6 +204,7 @@ static void tcp_release_proc(net_timer_t *timer, void *arg)
     }
     nlocker_lock(&pcb->state_locker);
     int release = pcb->opened && pcb->release_pending &&
+                  !pcb->socket_attached &&
                   pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
                   pcb->close_waiters == 0;
     nlocker_unlock(&pcb->state_locker);
@@ -283,6 +285,7 @@ static net_err_t tcp_start_outstanding(tcp_pcb_t *pcb, pktbuf_t *segment,
 net_err_t tcp_init(void)
 {
     nlocker_init(&table_locker, NLOCKER_THREAD);
+    plat_memset(pcb_storage, 0, sizeof(pcb_storage));
     plat_memset(pcbs, 0, sizeof(pcbs));
     plat_memset(release_timers, 0, sizeof(release_timers));
     next_ephemeral = 49152;
@@ -290,15 +293,11 @@ net_err_t tcp_init(void)
     return ipv4_register_handler(NET_PROTOCOL_TCP, tcp_in);
 }
 
-net_err_t tcp_open(tcp_pcb_t *pcb)
+static net_err_t tcp_alloc_locked(tcp_pcb_t **result, int socket_attached)
 {
-    if (pcb == 0)
+    if (result == 0)
         return NET_ERR_PARAM;
-    nlocker_lock(&table_locker);
-    if (tcp_find_slot(pcb) >= 0) {
-        nlocker_unlock(&table_locker);
-        return NET_ERR_PARAM;
-    }
+    *result = 0;
     int slot = -1;
     for (int i = 0; i < TCP_PCB_MAX; i++) {
         if (pcbs[i] == 0) {
@@ -307,10 +306,10 @@ net_err_t tcp_open(tcp_pcb_t *pcb)
         }
     }
     if (slot < 0) {
-        nlocker_unlock(&table_locker);
         return NET_ERR_MEM;
     }
 
+    tcp_pcb_t *pcb = &pcb_storage[slot];
     plat_memset(pcb, 0, sizeof(*pcb));
     nlocker_init(&pcb->recv_locker, NLOCKER_THREAD);
     nlocker_init(&pcb->state_locker, NLOCKER_THREAD);
@@ -326,8 +325,9 @@ net_err_t tcp_open(tcp_pcb_t *pcb)
     pcb->opened = 1;
     pcb->state = TCP_STATE_CLOSED;
     pcb->error = NET_ERR_OK;
+    pcb->socket_attached = socket_attached;
     pcbs[slot] = pcb;
-    nlocker_unlock(&table_locker);
+    *result = pcb;
     return NET_ERR_OK;
 
 fail:
@@ -337,8 +337,27 @@ fail:
     nlocker_destroy(&pcb->recv_locker);
     nlocker_destroy(&pcb->state_locker);
     plat_memset(pcb, 0, sizeof(*pcb));
-    nlocker_unlock(&table_locker);
     return NET_ERR_MEM;
+}
+
+net_err_t tcp_open(tcp_pcb_t **result)
+{
+    if (result == 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    net_err_t err = tcp_alloc_locked(result, 0);
+    nlocker_unlock(&table_locker);
+    return err;
+}
+
+net_err_t tcp_socket_open(tcp_pcb_t **result)
+{
+    if (result == 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    net_err_t err = tcp_alloc_locked(result, 1);
+    nlocker_unlock(&table_locker);
+    return err;
 }
 
 net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
@@ -744,6 +763,7 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
         return NET_ERR_PARAM;
     nlocker_lock(&pcb->state_locker);
     int releasable = pcb->release_pending &&
+                     !pcb->socket_attached &&
                      pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
                      pcb->close_waiters == 0;
     if (!releasable) {
@@ -751,7 +771,6 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
         return NET_ERR_STATE;
     }
     pcb->opened = 0;
-    pcbs[slot] = 0;
     nlocker_unlock(&pcb->state_locker);
     tcp_clear_outstanding(pcb);
     net_timer_remove(&pcb->time_wait_timer);
@@ -778,6 +797,7 @@ static net_err_t tcp_release_now_locked(tcp_pcb_t *pcb)
 #ifdef QS_M6C1_TEST
     m6c1_mark_tcp_close();
 #endif
+    pcbs[slot] = 0;
     return NET_ERR_OK;
 }
 
@@ -793,6 +813,32 @@ static net_err_t tcp_request_release(tcp_pcb_t *pcb)
                                   tcp_release_proc, pcb, 1,
                                   NET_TIMER_RELOAD);
     return err == NET_ERR_EXIST ? NET_ERR_OK : err;
+}
+
+net_err_t tcp_socket_detach(tcp_pcb_t *pcb)
+{
+    if (pcb == 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&table_locker);
+    if (tcp_find_slot(pcb) < 0) {
+        nlocker_unlock(&table_locker);
+        return NET_ERR_PARAM;
+    }
+    nlocker_lock(&pcb->state_locker);
+    int releasable = pcb->opened && pcb->socket_attached &&
+                     pcb->release_pending &&
+                     pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
+                     pcb->close_waiters == 0;
+    if (!releasable) {
+        nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
+        return NET_ERR_STATE;
+    }
+    pcb->socket_attached = 0;
+    nlocker_unlock(&pcb->state_locker);
+    net_err_t err = tcp_release_now_locked(pcb);
+    nlocker_unlock(&table_locker);
+    return err;
 }
 
 static net_err_t tcp_abort_and_release(tcp_pcb_t *pcb)
@@ -830,7 +876,8 @@ net_err_t tcp_close(tcp_pcb_t *pcb)
     if (release_pending) {
         nlocker_lock(&pcb->state_locker);
         int releasable = pcb->connect_waiters == 0 &&
-                         pcb->recv_waiters == 0 && pcb->close_waiters == 0;
+                         pcb->recv_waiters == 0 && pcb->close_waiters == 0 &&
+                         !pcb->socket_attached;
         nlocker_unlock(&pcb->state_locker);
         if (releasable) {
             net_err_t release_err = tcp_release_now_locked(pcb);

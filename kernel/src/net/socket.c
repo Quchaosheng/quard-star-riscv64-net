@@ -3,7 +3,7 @@
 typedef struct _socket_entry_t {
     union {
         udp_pcb_t udp;
-        tcp_pcb_t tcp;
+        tcp_pcb_t *tcp;
     } pcb;
     uint32_t generation;
     int used;
@@ -57,12 +57,38 @@ static socket_entry_t *socket_find_used(int handle)
 
 static void socket_invalidate(socket_entry_t *entry)
 {
+    if (entry->type == NET_SOCKET_TCP)
+        entry->pcb.tcp = 0;
     entry->used = 0;
     entry->closing = 0;
     if (entry->generation == 0x7fffffU)
         entry->retired = 1;
     else
         entry->generation++;
+}
+
+static net_err_t socket_close_tcp(socket_entry_t *entry)
+{
+    tcp_pcb_t *pcb = entry->pcb.tcp;
+
+    if (!entry->closing) {
+        entry->closing = 1;
+        net_err_t err = tcp_close(pcb);
+        if (err < 0)
+            entry->closing = 0;
+        return err < 0 ? err : NET_ERR_NONE;
+    }
+
+    net_err_t err = tcp_close(pcb);
+    if (err < 0)
+        return err;
+    err = tcp_socket_detach(pcb);
+    if (err == NET_ERR_STATE)
+        return NET_ERR_NONE;
+    if (err < 0)
+        return err;
+    socket_invalidate(entry);
+    return NET_ERR_OK;
 }
 
 net_err_t net_socket_init(void)
@@ -72,6 +98,7 @@ net_err_t net_socket_init(void)
         entries[i].closing = 0;
         entries[i].retired = 0;
         entries[i].generation = 1;
+        entries[i].pcb.tcp = 0;
     }
     nlocker_init(&socket_locker, NLOCKER_THREAD);
     return NET_ERR_OK;
@@ -81,20 +108,26 @@ int net_socket_open(int type)
 {
     if (type != NET_SOCKET_UDP && type != NET_SOCKET_TCP)
         return NET_ERR_NOT_SUPPORT;
+    nlocker_lock(&socket_locker);
     for (int i = 0; i < NET_SOCKET_MAX; i++) {
         socket_entry_t *entry = &entries[i];
         if (!entry->used && !entry->retired) {
             net_err_t err = type == NET_SOCKET_UDP ?
                             udp_open(&entry->pcb.udp) :
-                            tcp_open(&entry->pcb.tcp);
-            if (err < 0)
+                            tcp_socket_open(&entry->pcb.tcp);
+            if (err < 0) {
+                nlocker_unlock(&socket_locker);
                 return err;
+            }
             entry->used = 1;
             entry->closing = 0;
             entry->type = type;
-            return ((int)entry->generation << 8) | i;
+            int handle = ((int)entry->generation << 8) | i;
+            nlocker_unlock(&socket_locker);
+            return handle;
         }
     }
+    nlocker_unlock(&socket_locker);
     return NET_ERR_FULL;
 }
 
@@ -116,20 +149,10 @@ net_err_t net_socket_close(int handle)
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
-    if (entry->type == NET_SOCKET_TCP && entry->closing) {
-        if (!entry->pcb.tcp.opened) {
-            socket_invalidate(entry);
-            nlocker_unlock(&socket_locker);
-            return NET_ERR_OK;
-        }
+    if (entry->type == NET_SOCKET_TCP) {
+        net_err_t err = socket_close_tcp(entry);
         nlocker_unlock(&socket_locker);
-        net_err_t err = tcp_close(&entry->pcb.tcp);
-        nlocker_lock(&socket_locker);
-        if (err >= 0 && !entry->pcb.tcp.opened)
-            socket_invalidate(entry);
-        int pending = err >= 0 && entry->used;
-        nlocker_unlock(&socket_locker);
-        return err < 0 ? err : pending ? NET_ERR_NONE : NET_ERR_OK;
+        return err;
     }
     if (entry->closing) {
         nlocker_unlock(&socket_locker);
@@ -137,17 +160,12 @@ net_err_t net_socket_close(int handle)
     }
     entry->closing = 1;
     nlocker_unlock(&socket_locker);
-    net_err_t err = entry->type == NET_SOCKET_UDP ?
-                    udp_close(&entry->pcb.udp) : tcp_close(&entry->pcb.tcp);
+    net_err_t err = udp_close(&entry->pcb.udp);
     nlocker_lock(&socket_locker);
     if (err < 0) {
         entry->closing = 0;
         nlocker_unlock(&socket_locker);
         return err;
-    }
-    if (entry->type == NET_SOCKET_TCP && entry->pcb.tcp.opened) {
-        nlocker_unlock(&socket_locker);
-        return NET_ERR_NONE;
     }
     socket_invalidate(entry);
     nlocker_unlock(&socket_locker);
@@ -157,11 +175,17 @@ net_err_t net_socket_close(int handle)
 net_err_t net_socket_connect_start(int handle, netif_t *netif,
                                    const ipaddr_t *dest, uint16_t dest_port)
 {
+    nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0 || entry->type != NET_SOCKET_TCP)
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
-    return tcp_connect_start(&entry->pcb.tcp, netif, dest, dest_port);
+    }
+    net_err_t err = tcp_connect_start(entry->pcb.tcp, netif, dest,
+                                      dest_port);
+    nlocker_unlock(&socket_locker);
+    return err;
 }
 
 net_err_t net_socket_wait_connect(int handle, int timeout_ms)
@@ -172,7 +196,7 @@ net_err_t net_socket_wait_connect(int handle, int timeout_ms)
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
-    tcp_pcb_t *pcb = &entry->pcb.tcp;
+    tcp_pcb_t *pcb = entry->pcb.tcp;
     net_err_t err = tcp_wait_connect_acquire(pcb);
     if (err < 0) {
         nlocker_unlock(&socket_locker);
@@ -190,11 +214,16 @@ net_err_t net_socket_wait_connect(int handle, int timeout_ms)
 
 net_err_t net_socket_send(int handle, const uint8_t *data, int size)
 {
+    nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0 || entry->type != NET_SOCKET_TCP)
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
-    return tcp_send_start(&entry->pcb.tcp, data, size);
+    }
+    net_err_t err = tcp_send_start(entry->pcb.tcp, data, size);
+    nlocker_unlock(&socket_locker);
+    return err;
 }
 
 int net_socket_recv(int handle, uint8_t *data, int size, int timeout_ms)
@@ -207,7 +236,7 @@ int net_socket_recv(int handle, uint8_t *data, int size, int timeout_ms)
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
-    tcp_pcb_t *pcb = &entry->pcb.tcp;
+    tcp_pcb_t *pcb = entry->pcb.tcp;
     net_err_t err = tcp_recv_acquire(pcb);
     if (err < 0) {
         nlocker_unlock(&socket_locker);
@@ -231,7 +260,7 @@ net_err_t net_socket_wait_close(int handle, int timeout_ms)
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
-    tcp_pcb_t *pcb = &entry->pcb.tcp;
+    tcp_pcb_t *pcb = entry->pcb.tcp;
     net_err_t err = tcp_wait_close_acquire(pcb);
     if (err == NET_ERR_PARAM) {
         nlocker_unlock(&socket_locker);
