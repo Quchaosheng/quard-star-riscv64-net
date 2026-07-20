@@ -65,6 +65,31 @@ function_body()
   ' "$1"
 }
 
+for accept_function in commit release release_child; do
+  accept_body=$(awk -v name="$accept_function" '
+    $0 ~ "^net_err_t tcp_accept_" name "_acquired\\(" { body = 1 }
+    body { print }
+    body && /^}/ { exit }
+  ' "$root/kernel/src/net/tcp.c")
+  [ -n "$accept_body" ] || \
+    fail "missing tcp_accept_${accept_function}_acquired"
+  if printf '%s\n' "$accept_body" | grep -Eq \
+      'tcp_(listener_cleanup_locked|listener_release_detached_locked|release_now_locked|request_release)|net_timer_(add|remove)'; then
+    fail "tcp_accept_${accept_function}_acquired bypasses worker release"
+  fi
+done
+
+detach_body=$(awk '
+  /^net_err_t tcp_socket_detach\(tcp_pcb_t \*pcb\)$/ { body = 1 }
+  body { print }
+  body && /^}/ { exit }
+' "$root/kernel/src/net/tcp.c")
+printf '%s\n' "$detach_body" | grep -q \
+  'listener_children = tcp_listener_has_children_locked(pcb)' || \
+  fail 'TCP socket detach must inspect listener children'
+printf '%s\n' "$detach_body" | grep -q '!listener_children' || \
+  fail 'TCP socket detach must retain listener ownership while children exist'
+
 check_close_contract()
 {
   selftest=$1

@@ -703,10 +703,7 @@ net_err_t tcp_accept_commit_acquired(tcp_pcb_t *listener,
     listener->accept_count--;
     listener->pending_count--;
     listener->accept_waiters--;
-    int release_detached = listener->accept_waiters == 0;
     nlocker_unlock(&listener->state_locker);
-    if (release_detached)
-        tcp_listener_release_detached_locked(listener);
     nlocker_unlock(&table_locker);
     return NET_ERR_OK;
 }
@@ -730,17 +727,9 @@ net_err_t tcp_accept_release_acquired(tcp_pcb_t *listener)
     listener->accept_waiters--;
     int notify = listener->accept_count != 0 &&
                  !listener->release_pending;
-    int cleanup = listener->release_pending &&
-                  listener->accept_waiters == 0;
-    int release_detached = !listener->release_pending &&
-                           listener->accept_waiters == 0;
     nlocker_unlock(&listener->state_locker);
     if (notify)
         sys_sem_notify(listener->accept_done);
-    if (cleanup)
-        tcp_listener_cleanup_locked(listener);
-    else if (release_detached)
-        tcp_listener_release_detached_locked(listener);
     nlocker_unlock(&table_locker);
     return NET_ERR_OK;
 }
@@ -773,8 +762,6 @@ net_err_t tcp_accept_release_child_acquired(tcp_pcb_t *listener,
         return NET_ERR_STATE;
     }
     child->accept_pins--;
-    int release_child = child->accept_pins == 0 &&
-                        child->release_pending;
     if (child->accept_pins == 0 && child->socket_attached)
         detached_listeners[child_slot] = 0;
     nlocker_unlock(&child->state_locker);
@@ -782,20 +769,10 @@ net_err_t tcp_accept_release_child_acquired(tcp_pcb_t *listener,
     listener->accept_waiters--;
     int notify = listener->accept_count != 0 &&
                  !listener->release_pending;
-    int cleanup = listener->release_pending &&
-                  listener->accept_waiters == 0;
-    int release_detached = !listener->release_pending &&
-                           listener->accept_waiters == 0;
     nlocker_unlock(&listener->state_locker);
 
-    if (release_child)
-        (void)tcp_release_now_locked(child);
     if (notify)
         sys_sem_notify(listener->accept_done);
-    if (cleanup)
-        tcp_listener_cleanup_locked(listener);
-    else if (release_detached)
-        tcp_listener_release_detached_locked(listener);
     nlocker_unlock(&table_locker);
     return NET_ERR_OK;
 }
@@ -1291,13 +1268,15 @@ net_err_t tcp_socket_detach(tcp_pcb_t *pcb)
         nlocker_unlock(&table_locker);
         return NET_ERR_PARAM;
     }
+    int listener_children = tcp_listener_has_children_locked(pcb);
     nlocker_lock(&pcb->state_locker);
     int releasable = pcb->opened && pcb->socket_attached &&
                      pcb->release_pending &&
                      pcb->listener == 0 && pcb->accept_waiters == 0 &&
                      pcb->accept_pins == 0 &&
                      pcb->connect_waiters == 0 && pcb->recv_waiters == 0 &&
-                     pcb->close_waiters == 0;
+                     pcb->close_waiters == 0 &&
+                     !listener_children;
     if (!releasable) {
         nlocker_unlock(&pcb->state_locker);
         nlocker_unlock(&table_locker);

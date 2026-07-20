@@ -331,10 +331,62 @@ static void test_listener_close_races(netif_t *netif,
     assert(net_socket_accept_prepare(listener, &request.accept) ==
            NET_ERR_OK);
     assert(net_socket_close(listener) == NET_ERR_NONE);
+    assert(net_socket_close(listener) == NET_ERR_NONE);
+    assert(net_socket_close(listener) == NET_ERR_NONE);
     assert(net_socket_accept_commit(&request.accept) == NET_ERR_STATE);
     assert(!request.accept.acquired && request.accept.child == 0);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(net_socket_close(listener) == NET_ERR_OK);
+}
+
+static void test_half_open_release_stays_on_worker(netif_t *netif,
+                                                   const ipaddr_t *remote)
+{
+    int listener = make_listener(netif, 8085);
+    accept_thread_arg_t request = {
+        .handle = listener,
+        .result = INT_MIN,
+    };
+    pthread_t thread;
+    tcp_pcb_t *held[TCP_PCB_MAX];
+    int held_count = 0;
+
+    pause_accept = 1;
+    assert(pthread_barrier_init(&acquired_barrier, 0, 2) == 0);
+    assert(pthread_barrier_init(&unlocked_barrier, 0, 2) == 0);
+    assert(pthread_create(&thread, 0, accept_thread, &request) == 0);
+    wait_barrier(&acquired_barrier);
+
+    input_ok(netif, remote, 5300, 8085, 11000, 0,
+             TCP_FLAG_SYN, 0, 0);
+    assert(output.flags == (TCP_FLAG_SYN | TCP_FLAG_ACK));
+    assert(net_socket_close(listener) == NET_ERR_NONE);
+    wait_barrier(&unlocked_barrier);
+    pause_accept = 0;
+    assert(pthread_join(thread, 0) == 0);
+    assert(request.result == NET_ERR_STATE);
+    assert(!request.accept.acquired && request.accept.listener == 0 &&
+           request.accept.child == 0);
+    assert(pthread_barrier_destroy(&unlocked_barrier) == 0);
+    assert(pthread_barrier_destroy(&acquired_barrier) == 0);
+
+    for (int i = 0; i < TCP_PCB_MAX - 2; i++)
+        assert(tcp_open(&held[held_count++]) == NET_ERR_OK);
+    tcp_pcb_t *extra = 0;
+    assert(tcp_open(&extra) == NET_ERR_MEM);
+
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(tcp_open(&held[held_count++]) == NET_ERR_OK);
+    assert(tcp_open(&extra) == NET_ERR_MEM);
+
+    assert(net_socket_close(listener) == NET_ERR_OK);
+    assert(tcp_open(&held[held_count++]) == NET_ERR_OK);
+    assert(held_count == TCP_PCB_MAX);
+    assert(tcp_open(&extra) == NET_ERR_MEM);
+
+    for (int i = 0; i < held_count; i++)
+        assert(tcp_close(held[i]) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_pool_reuse(void)
@@ -371,6 +423,7 @@ int main(void)
     test_block_abort_commit_and_generation(&netif, &remote);
     test_full_table_preserves_queue(&netif, &remote);
     test_listener_close_races(&netif, &remote);
+    test_half_open_release_stays_on_worker(&netif, &remote);
     test_pool_reuse();
     return 0;
 }
