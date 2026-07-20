@@ -69,7 +69,6 @@ static void input_ok(netif_t *netif, const ipaddr_t *src,
                      const ipaddr_t *dest, pktbuf_t *buf)
 {
     assert(tcp_in(netif, src, dest, buf) == NET_ERR_OK);
-    pktbuf_free(buf);
 }
 
 int main(void)
