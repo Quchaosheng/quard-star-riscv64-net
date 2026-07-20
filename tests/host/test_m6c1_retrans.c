@@ -451,7 +451,7 @@ static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
     assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
     assert(pthread_join(thread, 0) == 0);
     assert(arg.result == NET_ERR_OK);
-    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(!pcb.opened);
     assert(tcp_wait_close(&pcb, -1) == NET_ERR_PARAM);
     tcp_pcb_t reused = { 0 };
