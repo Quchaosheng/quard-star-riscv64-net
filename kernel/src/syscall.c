@@ -29,6 +29,7 @@ typedef struct _socket_exec_t {
 enum {
     SOCKET_EXEC_OPEN,
     SOCKET_EXEC_BIND,
+    SOCKET_EXEC_LISTEN,
     SOCKET_EXEC_CONNECT,
     SOCKET_EXEC_SEND,
     SOCKET_EXEC_SENDTO,
@@ -46,6 +47,8 @@ static void socket_exec(void *arg)
                                           net_stack_default(),
                                           &request->address,
                                           request->port);
+    else if (request->op == SOCKET_EXEC_LISTEN)
+        request->result = net_socket_listen(request->handle, request->length);
     else if (request->op == SOCKET_EXEC_CONNECT)
         request->result = net_socket_connect_start(request->handle,
                                                     net_stack_default(),
@@ -319,6 +322,61 @@ static int __sys_bind(int handle, const net_sockaddr_in *user_address,
     return socket_exec_wait(&request);
 }
 
+static int __sys_listen(int handle, int backlog)
+{
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_LISTEN,
+        .handle = handle,
+        .length = backlog,
+    };
+    return socket_exec_wait(&request);
+}
+
+static int __sys_accept(int handle, net_sockaddr_in *user_address,
+                        size_t *user_address_length)
+{
+    net_socket_accept_t accept = {0};
+    size_t address_length = 0;
+    int output_address = user_address != 0 || user_address_length != 0;
+
+    if ((user_address == 0) != (user_address_length == 0))
+        return NET_ERR_PARAM;
+    if (output_address) {
+        if (copy_from_user(&address_length,
+                           (const char *)user_address_length,
+                           sizeof(address_length)) < 0 ||
+            address_length < sizeof(net_sockaddr_in) ||
+            user_range_check((const char *)user_address,
+                             sizeof(net_sockaddr_in), PTE_W) < 0 ||
+            user_range_check((const char *)user_address_length,
+                             sizeof(address_length), PTE_W) < 0)
+            return NET_ERR_PARAM;
+    }
+
+    int result = net_socket_accept_prepare(handle, &accept);
+    if (result < 0)
+        return result;
+    if (output_address) {
+        net_sockaddr_in address = {
+            .family = NET_AF_INET,
+            .port = x_htons(accept.remote_port),
+            .address = accept.remote_ip.q_addr,
+        };
+        address_length = sizeof(address);
+        if (copy_to_user((char *)user_address, &address,
+                         sizeof(address)) < 0) {
+            net_socket_accept_abort(&accept);
+            return NET_ERR_PARAM;
+        }
+        if (copy_to_user((char *)user_address_length, &address_length,
+                         sizeof(address_length)) < 0) {
+            net_socket_accept_abort(&accept);
+            return NET_ERR_PARAM;
+        }
+    }
+    return net_socket_accept_commit(&accept);
+}
+
 static int __sys_sendto(int handle, const net_sendto_args *user_args)
 {
     net_sendto_args args;
@@ -446,6 +504,11 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 		return __sys_socket((int)arg1, (int)arg2, (int)arg3);
 	case __NR_bind:
 		return __sys_bind((int)arg1, (const net_sockaddr_in *)arg2, arg3);
+	case __NR_listen:
+		return __sys_listen((int)arg1, (int)arg2);
+	case __NR_accept:
+		return __sys_accept((int)arg1, (net_sockaddr_in *)arg2,
+		                    (size_t *)arg3);
 	case __NR_connect:
 		return __sys_connect((int)arg1, (const net_sockaddr_in *)arg2, arg3);
 	case __NR_send:
