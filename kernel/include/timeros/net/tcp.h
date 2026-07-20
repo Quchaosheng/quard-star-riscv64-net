@@ -76,6 +76,7 @@ typedef struct _tcp_pcb_t {
     int recv_waiters;
     int close_waiters;
     int release_pending;
+    int socket_attached;
     sys_sem_t connect_done;
     sys_sem_t recv_done;
     sys_sem_t close_done;
@@ -84,7 +85,10 @@ typedef struct _tcp_pcb_t {
 } tcp_pcb_t;
 
 net_err_t tcp_init(void);
-net_err_t tcp_open(tcp_pcb_t *pcb);
+net_err_t tcp_open(tcp_pcb_t **result);
+/* Socket-owned PCBs remain pooled until the matching detach succeeds. */
+net_err_t tcp_socket_open(tcp_pcb_t **result);
+net_err_t tcp_socket_detach(tcp_pcb_t *pcb);
 net_err_t tcp_connect_start(tcp_pcb_t *pcb, netif_t *netif,
                             const ipaddr_t *remote, uint16_t remote_port);
 net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size);

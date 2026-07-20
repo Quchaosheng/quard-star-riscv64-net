@@ -172,6 +172,28 @@ static void test_socket_waiter_pin(netif_t *netif, const ipaddr_t *remote)
     assert(net_socket_close(reused) == NET_ERR_OK);
 }
 
+static void test_socket_pcb_ownership(netif_t *netif,
+                                      const ipaddr_t *remote)
+{
+    static const uint8_t byte = 1;
+    int old_handle = net_socket_open(NET_SOCKET_TCP);
+
+    assert(old_handle >= 0);
+    assert(net_socket_close(old_handle) == NET_ERR_NONE);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+
+    int fresh_handle = net_socket_open(NET_SOCKET_TCP);
+    assert(fresh_handle >= 0 && fresh_handle != old_handle);
+    assert(net_socket_close(old_handle) == NET_ERR_OK);
+    assert(net_socket_connect_start(old_handle, netif, remote, 4820) ==
+           NET_ERR_PARAM);
+    assert(net_socket_send(old_handle, &byte, 1) == NET_ERR_PARAM);
+
+    assert(net_socket_close(fresh_handle) == NET_ERR_NONE);
+    assert(net_socket_wait_close(fresh_handle, -1) == NET_ERR_OK);
+    assert(net_socket_close(fresh_handle) == NET_ERR_OK);
+}
+
 int main(void)
 {
     static const uint8_t payload[] = "socket-stream";
@@ -253,6 +275,7 @@ int main(void)
     assert(net_socket_close(reused) == NET_ERR_NONE);
     assert(net_socket_wait_close(reused, -1) == NET_ERR_OK);
     assert(net_socket_close(reused) == NET_ERR_OK);
+    test_socket_pcb_ownership(&netif, &remote);
     test_socket_waiter_pin(&netif, &remote);
     return 0;
 }
