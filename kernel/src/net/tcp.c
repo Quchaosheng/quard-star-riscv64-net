@@ -463,8 +463,7 @@ net_err_t tcp_send_start(tcp_pcb_t *pcb, const uint8_t *data, int size)
     return NET_ERR_OK;
 }
 
-static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
-                                     int connect_wait)
+static net_err_t tcp_wait_completion_acquire(tcp_pcb_t *pcb, int connect_wait)
 {
     if (pcb == 0)
         return NET_ERR_PARAM;
@@ -474,7 +473,6 @@ static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
         return NET_ERR_PARAM;
     }
     nlocker_lock(&pcb->state_locker);
-    sys_sem_t sem = connect_wait ? pcb->connect_done : pcb->close_done;
     int *waiters = connect_wait ? &pcb->connect_waiters :
                                   &pcb->close_waiters;
     if (!pcb->opened ||
@@ -484,28 +482,31 @@ static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
         nlocker_unlock(&table_locker);
         return NET_ERR_STATE;
     }
+    if (!connect_wait && pcb->state == TCP_STATE_CLOSED &&
+        pcb->release_pending) {
+        (*waiters)++;
+        nlocker_unlock(&pcb->state_locker);
+        nlocker_unlock(&table_locker);
+        return NET_ERR_OK;
+    }
     if (pcb->error < 0) {
         net_err_t terminal_error = pcb->error;
         nlocker_unlock(&pcb->state_locker);
         nlocker_unlock(&table_locker);
         return terminal_error;
     }
-    if ((connect_wait && pcb->state == TCP_STATE_ESTABLISHED) ||
-        (!connect_wait && pcb->state == TCP_STATE_CLOSED &&
-         pcb->release_pending)) {
-        nlocker_unlock(&pcb->state_locker);
-        nlocker_unlock(&table_locker);
-        return NET_ERR_OK;
-    }
     if (connect_wait) {
-        if (pcb->state != TCP_STATE_SYN_SENT) {
+        if (pcb->state != TCP_STATE_SYN_SENT &&
+            pcb->state != TCP_STATE_ESTABLISHED) {
             nlocker_unlock(&pcb->state_locker);
             nlocker_unlock(&table_locker);
             return NET_ERR_STATE;
         }
     } else if (pcb->state != TCP_STATE_FIN_WAIT_1 &&
                pcb->state != TCP_STATE_FIN_WAIT_2 &&
-               pcb->state != TCP_STATE_TIME_WAIT) {
+               pcb->state != TCP_STATE_TIME_WAIT &&
+               !(pcb->state == TCP_STATE_CLOSED &&
+                 pcb->release_pending)) {
         nlocker_unlock(&pcb->state_locker);
         nlocker_unlock(&table_locker);
         return NET_ERR_STATE;
@@ -513,6 +514,38 @@ static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
     (*waiters)++;
     nlocker_unlock(&pcb->state_locker);
     nlocker_unlock(&table_locker);
+    return NET_ERR_OK;
+}
+
+static net_err_t tcp_wait_completion_acquired(tcp_pcb_t *pcb, int timeout_ms,
+                                              int connect_wait)
+{
+    if (pcb == 0)
+        return NET_ERR_PARAM;
+
+    sys_sem_t sem;
+    int *waiters;
+    net_err_t immediate = NET_ERR_NONE;
+    nlocker_lock(&pcb->state_locker);
+    sem = connect_wait ? pcb->connect_done : pcb->close_done;
+    waiters = connect_wait ? &pcb->connect_waiters : &pcb->close_waiters;
+    if (!pcb->opened)
+        immediate = NET_ERR_STATE;
+    else if (!connect_wait && pcb->state == TCP_STATE_CLOSED &&
+             pcb->release_pending)
+        immediate = NET_ERR_OK;
+    else if (pcb->error < 0)
+        immediate = pcb->error;
+    else if (connect_wait && pcb->state == TCP_STATE_ESTABLISHED)
+        immediate = NET_ERR_OK;
+    nlocker_unlock(&pcb->state_locker);
+
+    if (immediate != NET_ERR_NONE) {
+        nlocker_lock(&pcb->state_locker);
+        (*waiters)--;
+        nlocker_unlock(&pcb->state_locker);
+        return immediate;
+    }
 
     net_err_t err = sys_sem_wait(sem, timeout_ms);
     nlocker_lock(&pcb->state_locker);
@@ -527,22 +560,45 @@ static net_err_t tcp_wait_completion(tcp_pcb_t *pcb, int timeout_ms,
 
 net_err_t tcp_wait_connect(tcp_pcb_t *pcb, int timeout_ms)
 {
-    if (pcb == 0)
-        return NET_ERR_PARAM;
-    return tcp_wait_completion(pcb, timeout_ms, 1);
+    net_err_t err = tcp_wait_connect_acquire(pcb);
+
+    if (err < 0)
+        return err;
+    return tcp_wait_connect_acquired(pcb, timeout_ms);
+}
+
+net_err_t tcp_wait_connect_acquire(tcp_pcb_t *pcb)
+{
+    return tcp_wait_completion_acquire(pcb, 1);
+}
+
+net_err_t tcp_wait_connect_acquired(tcp_pcb_t *pcb, int timeout_ms)
+{
+    return tcp_wait_completion_acquired(pcb, timeout_ms, 1);
 }
 
 net_err_t tcp_wait_close(tcp_pcb_t *pcb, int timeout_ms)
 {
-    if (pcb == 0)
-        return NET_ERR_PARAM;
-    return tcp_wait_completion(pcb, timeout_ms, 0);
+    net_err_t err = tcp_wait_close_acquire(pcb);
+
+    if (err < 0)
+        return err;
+    return tcp_wait_close_acquired(pcb, timeout_ms);
 }
 
-int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
-                   int timeout_ms)
+net_err_t tcp_wait_close_acquire(tcp_pcb_t *pcb)
 {
-    if (pcb == 0 || data == 0 || size <= 0)
+    return tcp_wait_completion_acquire(pcb, 0);
+}
+
+net_err_t tcp_wait_close_acquired(tcp_pcb_t *pcb, int timeout_ms)
+{
+    return tcp_wait_completion_acquired(pcb, timeout_ms, 0);
+}
+
+net_err_t tcp_recv_acquire(tcp_pcb_t *pcb)
+{
+    if (pcb == 0)
         return NET_ERR_PARAM;
     nlocker_lock(&table_locker);
     if (tcp_find_slot(pcb) < 0) {
@@ -565,6 +621,14 @@ int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
     pcb->recv_waiters++;
     nlocker_unlock(&pcb->state_locker);
     nlocker_unlock(&table_locker);
+    return NET_ERR_OK;
+}
+
+int tcp_recv_bytes_acquired(tcp_pcb_t *pcb, uint8_t *data, int size,
+                            int timeout_ms)
+{
+    if (pcb == 0 || data == 0 || size <= 0)
+        return NET_ERR_PARAM;
 
     int result;
     for (;;) {
@@ -615,6 +679,18 @@ int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
     pcb->recv_waiters--;
     nlocker_unlock(&pcb->state_locker);
     return result;
+}
+
+int tcp_recv_bytes(tcp_pcb_t *pcb, uint8_t *data, int size,
+                   int timeout_ms)
+{
+    if (pcb == 0 || data == 0 || size <= 0)
+        return NET_ERR_PARAM;
+    net_err_t err = tcp_recv_acquire(pcb);
+
+    if (err < 0)
+        return err;
+    return tcp_recv_bytes_acquired(pcb, data, size, timeout_ms);
 }
 
 net_err_t tcp_retransmit_due(tcp_pcb_t *pcb)

@@ -11,7 +11,17 @@
 #include <timeros/net/netif.h>
 
 static int recv_started;
+static int recv_acquired;
 static int recv_result;
+
+void udp_test_recv_acquired_hook(void)
+{
+    __atomic_store_n(&recv_acquired, 1, __ATOMIC_RELEASE);
+}
+
+void udp_test_close_marked_hook(void)
+{
+}
 
 static void *socket_recv_thread(void *arg)
 {
@@ -86,8 +96,11 @@ int main(void)
     assert(net_socket_bind(waiting, 4800) == NET_ERR_OK);
     pthread_t receiver;
     recv_started = 0;
+    recv_acquired = 0;
     assert(pthread_create(&receiver, 0, socket_recv_thread, &waiting) == 0);
     while (!__atomic_load_n(&recv_started, __ATOMIC_ACQUIRE))
+        sched_yield();
+    while (!__atomic_load_n(&recv_acquired, __ATOMIC_ACQUIRE))
         sched_yield();
     assert(net_socket_close(waiting) == NET_ERR_OK);
     assert(pthread_join(receiver, 0) == 0);
