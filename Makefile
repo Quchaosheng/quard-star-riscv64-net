@@ -66,6 +66,7 @@ test-host:
 	./tests/host/test_m6c2_peer.sh
 	./tests/host/test_m6c2_smoke_script.sh
 	./tests/host/test_m6c2_stress_contracts.sh
+	./tests/host/test_m6c2_stress_peer.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
