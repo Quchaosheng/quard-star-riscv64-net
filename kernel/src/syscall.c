@@ -42,7 +42,10 @@ static void socket_exec(void *arg)
     if (request->op == SOCKET_EXEC_OPEN)
         request->result = net_socket_open(request->type);
     else if (request->op == SOCKET_EXEC_BIND)
-        request->result = net_socket_bind(request->handle, request->port);
+        request->result = net_socket_bind(request->handle,
+                                          net_stack_default(),
+                                          &request->address,
+                                          request->port);
     else if (request->op == SOCKET_EXEC_CONNECT)
         request->result = net_socket_connect_start(request->handle,
                                                     net_stack_default(),
@@ -312,6 +315,7 @@ static int __sys_bind(int handle, const net_sockaddr_in *user_address,
         .handle = handle,
         .port = x_ntohs(address.port),
     };
+    request.address.q_addr = address.address;
     return socket_exec_wait(&request);
 }
 

@@ -46,13 +46,13 @@ int main(void)
     second = net_socket_open(NET_SOCKET_UDP);
     assert(first >= 0);
     assert(second >= 0 && second != first);
-    assert(net_socket_bind(first, 4001) == NET_ERR_OK);
-    assert(net_socket_bind(second, 4001) == NET_ERR_EXIST);
+    assert(net_socket_bind(first, 0, 0, 4001) == NET_ERR_OK);
+    assert(net_socket_bind(second, 0, 0, 4001) == NET_ERR_EXIST);
     assert(net_socket_close(first) == NET_ERR_OK);
-    assert(net_socket_bind(second, 4001) == NET_ERR_OK);
+    assert(net_socket_bind(second, 0, 0, 4001) == NET_ERR_OK);
     assert(net_socket_close(second) == NET_ERR_OK);
     assert(net_socket_close(first) == NET_ERR_PARAM);
-    assert(net_socket_bind(99, 4001) == NET_ERR_PARAM);
+    assert(net_socket_bind(99, 0, 0, 4001) == NET_ERR_PARAM);
 
     assert(netif_init() == NET_ERR_OK);
     assert(ether_init() == NET_ERR_OK);
@@ -62,8 +62,8 @@ int main(void)
     assert(net_socket_init() == NET_ERR_OK);
     first = net_socket_open(NET_SOCKET_UDP);
     second = net_socket_open(NET_SOCKET_UDP);
-    assert(net_socket_bind(first, 4600) == NET_ERR_OK);
-    assert(net_socket_bind(second, 4700) == NET_ERR_OK);
+    assert(net_socket_bind(first, 0, 0, 4600) == NET_ERR_OK);
+    assert(net_socket_bind(second, 0, 0, 4700) == NET_ERR_OK);
     static const uint8_t payload[] = "socket-udp";
     uint8_t received[16];
     ipaddr_t source;
@@ -93,7 +93,7 @@ int main(void)
 
     int waiting = net_socket_open(NET_SOCKET_UDP);
     assert(waiting >= 0);
-    assert(net_socket_bind(waiting, 4800) == NET_ERR_OK);
+    assert(net_socket_bind(waiting, 0, 0, 4800) == NET_ERR_OK);
     pthread_t receiver;
     recv_started = 0;
     recv_acquired = 0;

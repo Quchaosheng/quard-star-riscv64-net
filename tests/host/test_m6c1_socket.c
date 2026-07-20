@@ -222,7 +222,7 @@ int main(void)
 
     int handle = net_socket_open(NET_SOCKET_TCP);
     assert(handle >= 0);
-    assert(net_socket_bind(handle, 4000) == NET_ERR_PARAM);
+    assert(net_socket_bind(handle, 0, 0, 4000) == NET_ERR_PARAM);
     assert(net_socket_sendto(handle, &netif, &remote, 4800,
                              payload, sizeof(payload)) == NET_ERR_PARAM);
     assert(net_socket_recvfrom(handle, received, sizeof(received),

@@ -67,6 +67,23 @@ static void socket_invalidate(socket_entry_t *entry)
         entry->generation++;
 }
 
+static void socket_accept_clear(net_socket_accept_t *accept)
+{
+    *accept = (net_socket_accept_t){ 0 };
+}
+
+static void socket_accept_abort_locked(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired)
+        return;
+    if (accept->child != 0)
+        (void)tcp_accept_release_child_acquired(accept->listener,
+                                                accept->child);
+    else
+        (void)tcp_accept_release_acquired(accept->listener);
+    socket_accept_clear(accept);
+}
+
 static net_err_t socket_close_tcp(socket_entry_t *entry)
 {
     tcp_pcb_t *pcb = entry->pcb.tcp;
@@ -131,13 +148,126 @@ int net_socket_open(int type)
     return NET_ERR_FULL;
 }
 
-net_err_t net_socket_bind(int handle, uint16_t port)
+net_err_t net_socket_bind(int handle, netif_t *netif,
+                          const ipaddr_t *local, uint16_t port)
 {
+    nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0 || entry->type != NET_SOCKET_UDP)
+    if (entry == 0) {
+        nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
-    return udp_bind(&entry->pcb.udp, port);
+    }
+    net_err_t err = entry->type == NET_SOCKET_UDP ?
+                    udp_bind(&entry->pcb.udp, port) :
+                    tcp_bind(entry->pcb.tcp, netif, local, port);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+net_err_t net_socket_listen(int handle, int backlog)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    net_err_t err = tcp_listen(entry->pcb.tcp, backlog);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+net_err_t net_socket_accept_prepare(int handle,
+                                    net_socket_accept_t *accept)
+{
+    if (accept == 0)
+        return NET_ERR_PARAM;
+    socket_accept_clear(accept);
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    tcp_pcb_t *listener = entry->pcb.tcp;
+    net_err_t err = tcp_accept_acquire(listener);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+    accept->listener_handle = handle;
+    accept->listener = listener;
+    accept->acquired = 1;
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
+    nlocker_unlock(&socket_locker);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    err = tcp_accept_peek_acquired(listener, &accept->child,
+                                   &accept->remote_ip,
+                                   &accept->remote_port, 0);
+    if (err < 0)
+        net_socket_accept_abort(accept);
+    return err;
+}
+
+int net_socket_accept_commit(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired || accept->listener == 0 ||
+        accept->child == 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&socket_locker);
+    socket_entry_t *listener_entry = socket_find(accept->listener_handle);
+    if (listener_entry == 0 || listener_entry->type != NET_SOCKET_TCP ||
+        listener_entry->pcb.tcp != accept->listener) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_STATE;
+    }
+
+    socket_entry_t *accepted_entry = 0;
+    int slot = -1;
+    for (int i = 0; i < NET_SOCKET_MAX; i++) {
+        if (!entries[i].used && !entries[i].retired) {
+            accepted_entry = &entries[i];
+            slot = i;
+            break;
+        }
+    }
+    if (accepted_entry == 0) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_FULL;
+    }
+
+    net_err_t err = tcp_accept_commit_acquired(accept->listener,
+                                                accept->child);
+    if (err < 0) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+    accepted_entry->pcb.tcp = accept->child;
+    accepted_entry->used = 1;
+    accepted_entry->closing = 0;
+    accepted_entry->type = NET_SOCKET_TCP;
+    int handle = ((int)accepted_entry->generation << 8) | slot;
+    socket_accept_clear(accept);
+    nlocker_unlock(&socket_locker);
+    return handle;
+}
+
+void net_socket_accept_abort(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired)
+        return;
+    nlocker_lock(&socket_locker);
+    socket_accept_abort_locked(accept);
+    nlocker_unlock(&socket_locker);
 }
 
 net_err_t net_socket_close(int handle)
