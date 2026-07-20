@@ -150,10 +150,12 @@ static void test_open_close_restores_slots(void)
     assert(tcp_open(&pcbs[TCP_PCB_MAX]) == NET_ERR_MEM);
     for (int i = 0; i < TCP_PCB_MAX; i++)
         assert(tcp_close(&pcbs[i]) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
     for (int i = 0; i < TCP_PCB_MAX; i++)
         assert(tcp_open(&pcbs[i]) == NET_ERR_OK);
     for (int i = 0; i < TCP_PCB_MAX; i++)
         assert(tcp_close(&pcbs[i]) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_connect_allocation_rollback(netif_t *netif,
@@ -179,6 +181,7 @@ static void test_connect_allocation_rollback(netif_t *netif,
         pktbuf_free(held[i]);
     assert(tcp_connect_start(&pcb, netif, remote, 4799) == NET_ERR_OK);
     assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_connect_and_retransmit(netif_t *netif,
@@ -212,6 +215,7 @@ static void test_connect_and_retransmit(netif_t *netif,
     assert(tcp_connect_start(&pcb, netif, remote, 4800) == NET_ERR_OK);
     assert(sys_sem_wait(pcb.connect_done, -1) == NET_ERR_TMO);
     assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_receive_notification_is_binary(netif_t *netif,
@@ -243,6 +247,7 @@ static void test_receive_notification_is_binary(netif_t *netif,
     assert(sys_time_goes(&started) >= 5);
     assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 typedef struct _recv_thread_arg_t {
@@ -406,6 +411,7 @@ static void test_handshake_and_receive(netif_t *netif,
     input_ok(netif, remote, &netif->ipaddr, fin);
     assert(pcb.state == TCP_STATE_TIME_WAIT);
     assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
@@ -449,6 +455,32 @@ static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
     tcp_pcb_t reused = { 0 };
     assert(tcp_open(&reused) == NET_ERR_OK);
     assert(tcp_close(&reused) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+}
+
+static void test_simultaneous_close(netif_t *netif,
+                                    const ipaddr_t *remote)
+{
+    tcp_pcb_t pcb = { 0 };
+
+    establish(&pcb, netif, remote, 4806);
+    assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(pcb.state == TCP_STATE_FIN_WAIT_1);
+
+    input_ok(netif, remote, &netif->ipaddr,
+             make_segment(remote, &netif->ipaddr, 4806, pcb.local_port,
+                          pcb.rcv_nxt, pcb.snd_una,
+                          TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0));
+    assert(pcb.state == TCP_STATE_FIN_WAIT_1);
+    assert(pcb.peer_fin_seen);
+
+    input_ok(netif, remote, &netif->ipaddr,
+             make_segment(remote, &netif->ipaddr, 4806, pcb.local_port,
+                          pcb.rcv_nxt, pcb.snd_nxt, TCP_FLAG_ACK, 0, 0));
+    assert(pcb.state == TCP_STATE_TIME_WAIT);
+    assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(!pcb.opened);
 }
 
 int main(void)
@@ -474,6 +506,7 @@ int main(void)
     test_abort_wakes_close_waiter(netif, &remote);
     test_handshake_and_receive(netif, &remote);
     test_time_wait_expires(netif, &remote);
+    test_simultaneous_close(netif, &remote);
 
     assert(netif_set_deactive(netif) == NET_ERR_OK);
     assert(netif_close(netif) == NET_ERR_OK);
