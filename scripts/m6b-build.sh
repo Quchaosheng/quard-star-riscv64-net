@@ -11,4 +11,7 @@ export QS_KERNEL_CPPFLAGS="-DQS_M2C_TEST -DQS_M3_TEST -DQS_M4_TEST -DQS_M5_TEST 
 if [ "${QS_M6C1_TEST:-0}" = 1 ]; then
   export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M6C1_TEST"
 fi
+if [ "${QS_M6C2_TEST:-0}" = 1 ]; then
+  export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M6C2_TEST"
+fi
 exec "$root/scripts/m6a-build.sh"
