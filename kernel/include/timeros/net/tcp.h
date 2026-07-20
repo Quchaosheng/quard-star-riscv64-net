@@ -67,7 +67,6 @@ typedef struct _tcp_pcb_t {
     int retry_count;
     net_timer_t retrans_timer;
     net_timer_t time_wait_timer;
-    net_timer_t release_timer;
     uint8_t recv_storage[TCP_RECV_MAX];
     int recv_head;
     int recv_count;
