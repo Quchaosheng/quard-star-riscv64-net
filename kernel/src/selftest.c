@@ -40,6 +40,12 @@
 #define M6B_UDP_TIMEOUT_DONE (1U << 21)
 #define M6B_ALL_DONE         (M6A_ALL_DONE | M6B_UDP_DONE | \
                               M6B_UDP_TIMEOUT_DONE)
+#define M6C1_TCP_DONE        (1U << 22)
+#define M6C1_TCP_RETRANS_DONE (1U << 23)
+#define M6C1_TCP_CLOSE_DONE  (1U << 24)
+#define M6C1_TCP_CLOSE_PRINTING (1U << 25)
+#define M6C1_ALL_DONE        (M6B_ALL_DONE | M6C1_TCP_DONE | \
+                              M6C1_TCP_RETRANS_DONE | M6C1_TCP_CLOSE_DONE)
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -131,6 +137,37 @@ void m6_mark_loop(void) { m6_mark(M6_LOOP_DONE); }
 void m6b_mark_udp(void) { mark(M6B_UDP_DONE); }
 void m6b_mark_udp_timeout(void) { mark(M6B_UDP_TIMEOUT_DONE); }
 
+static void m6c1_mark(u32 bit)
+{
+#ifdef QS_M6C1_TEST
+    __atomic_fetch_or(&completed, bit, __ATOMIC_RELEASE);
+#else
+    (void)bit;
+#endif
+}
+
+void m6c1_mark_tcp(void)
+{
+    m6c1_mark(M6C1_TCP_DONE);
+}
+
+void m6c1_mark_tcp_retrans(void)
+{
+    m6c1_mark(M6C1_TCP_RETRANS_DONE);
+}
+
+void m6c1_mark_tcp_close(void)
+{
+#ifdef QS_M6C1_TEST
+    u32 old = __atomic_fetch_or(&completed, M6C1_TCP_CLOSE_PRINTING,
+                                __ATOMIC_ACQ_REL);
+    if ((old & M6C1_TCP_CLOSE_PRINTING) != 0)
+        return;
+    printk("QS:M6C1_TCP_CLOSE_OK\n");
+    __atomic_fetch_or(&completed, M6C1_TCP_CLOSE_DONE, __ATOMIC_RELEASE);
+#endif
+}
+
 void m2c_selftest_poll(void)
 {
 #ifdef QS_M2C_TEST
@@ -150,6 +187,9 @@ void m2c_selftest_poll(void)
 #ifdef QS_M6B_TEST
     required = M6B_ALL_DONE;
 #endif
+#ifdef QS_M6C1_TEST
+    required = M6C1_ALL_DONE;
+#endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
 
@@ -161,7 +201,11 @@ void m2c_selftest_poll(void)
 
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
 #ifdef QS_M6B_TEST
+#ifdef QS_M6C1_TEST
+    printk("QS:TEST_PASS:m6c1-smoke\n");
+#else
     printk("QS:TEST_PASS:m6b-smoke\n");
+#endif
 #elif defined(QS_M6A_TEST)
     printk("QS:TEST_PASS:m6a-smoke\n");
 #elif defined(QS_M4_STRESS)

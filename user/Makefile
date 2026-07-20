@@ -11,7 +11,7 @@ BIN_DIR := bin
 
 .PHONY: all prepare-bin debug objdump_time objdump_write objdump_xec
 
-all: initproc xec user_shell time udp_echo
+all: initproc xec user_shell time udp_echo tcp_echo
 
 prepare-bin:
 	mkdir -p $(BIN_DIR)
@@ -33,6 +33,9 @@ initproc: initproc.c $(LIB)/*.c | prepare-bin
 
 udp_echo: udp_echo.c $(LIB)/*.c | prepare-bin
 	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -T user.ld $^ -o bin/udp_echo
+
+tcp_echo: tcp_echo.c $(LIB)/*.c | prepare-bin
+	${CC} ${CPPFLAGS} ${CFLAGS} $(INCLUDE) -T user.ld $^ -o bin/tcp_echo
 
 debug: objdump_time objdump_write objdump_xec
 

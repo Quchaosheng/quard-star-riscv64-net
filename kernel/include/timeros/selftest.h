@@ -25,5 +25,8 @@ void m6_mark_arp_timer(void);
 void m6_mark_loop(void);
 void m6b_mark_udp(void);
 void m6b_mark_udp_timeout(void);
+void m6c1_mark_tcp(void);
+void m6c1_mark_tcp_retrans(void);
+void m6c1_mark_tcp_close(void);
 
 #endif
