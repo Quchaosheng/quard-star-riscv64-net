@@ -56,6 +56,8 @@
                        M6C2_ACCEPT_DONE | M6C2_ECHO_DONE | \
                        M6C2_CHILD_CLOSE_DONE | \
                        M6C2_LISTENER_CLOSE_DONE | M6C2_CLOSE_DONE)
+#define M6C2_STRESS_CONNECTIONS 108U
+#define M6C2_STRESS_PARALLEL 8U
 
 #ifndef QS_STRESS_MIN_TICKS
 #define QS_STRESS_MIN_TICKS 0ULL
@@ -65,6 +67,13 @@ static u32 completed;
 static u32 finished;
 static u32 m6c2_echo_claimed;
 static u32 m6c2_close_claimed;
+#ifdef QS_M6C2_STRESS
+static u32 m6c2_stress_accepted;
+static u32 m6c2_stress_echoed;
+static u32 m6c2_stress_live;
+static u32 m6c2_stress_peak;
+static u32 m6c2_stress_released;
+#endif
 static u64 started_at;
 
 static void mark(u32 bit)
@@ -83,6 +92,13 @@ void m2c_selftest_init(void)
     __atomic_store_n(&finished, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&m6c2_echo_claimed, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&m6c2_close_claimed, 0, __ATOMIC_RELAXED);
+#ifdef QS_M6C2_STRESS
+    __atomic_store_n(&m6c2_stress_accepted, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&m6c2_stress_echoed, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&m6c2_stress_live, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&m6c2_stress_peak, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&m6c2_stress_released, 0, __ATOMIC_RELAXED);
+#endif
     started_at = r_mtime();
 #endif
 }
@@ -199,11 +215,23 @@ void m6c2_mark_tcp_listen(void)
 void m6c2_mark_tcp_accept(void)
 {
     m6c2_mark(M6C2_ACCEPT_DONE);
+#ifdef QS_M6C2_STRESS
+    u32 live = __atomic_add_fetch(&m6c2_stress_live, 1,
+                                  __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&m6c2_stress_accepted, 1, __ATOMIC_RELAXED);
+    u32 peak = __atomic_load_n(&m6c2_stress_peak, __ATOMIC_RELAXED);
+    while (peak < live && !__atomic_compare_exchange_n(
+               &m6c2_stress_peak, &peak, live, 0,
+               __ATOMIC_RELEASE, __ATOMIC_RELAXED)) { }
+#endif
 }
 
 void m6c2_mark_tcp_echo(void)
 {
 #ifdef QS_M6C2_TEST
+#ifdef QS_M6C2_STRESS
+    __atomic_add_fetch(&m6c2_stress_echoed, 1, __ATOMIC_RELAXED);
+#endif
     if (__atomic_exchange_n(&m6c2_echo_claimed, 1, __ATOMIC_ACQ_REL))
         return;
     printk("QS:M6C2_ECHO_OK\n");
@@ -214,6 +242,10 @@ void m6c2_mark_tcp_echo(void)
 void m6c2_mark_tcp_child_close(void)
 {
     m6c2_mark(M6C2_CHILD_CLOSE_DONE);
+#ifdef QS_M6C2_STRESS
+    __atomic_sub_fetch(&m6c2_stress_live, 1, __ATOMIC_ACQ_REL);
+    __atomic_add_fetch(&m6c2_stress_released, 1, __ATOMIC_RELAXED);
+#endif
 }
 
 void m6c2_mark_tcp_listener_close(void)
@@ -232,6 +264,23 @@ static void m6c2_publish_close(void)
         return;
     printk("QS:M6C2_CLOSE_OK\n");
     __atomic_fetch_or(&completed, M6C2_CLOSE_DONE, __ATOMIC_RELEASE);
+#endif
+}
+
+static int m6c2_stress_ready(void)
+{
+#ifdef QS_M6C2_STRESS
+    return __atomic_load_n(&m6c2_stress_accepted, __ATOMIC_ACQUIRE) ==
+               M6C2_STRESS_CONNECTIONS &&
+           __atomic_load_n(&m6c2_stress_echoed, __ATOMIC_ACQUIRE) ==
+               M6C2_STRESS_CONNECTIONS &&
+           __atomic_load_n(&m6c2_stress_released, __ATOMIC_ACQUIRE) ==
+               M6C2_STRESS_CONNECTIONS &&
+           __atomic_load_n(&m6c2_stress_live, __ATOMIC_ACQUIRE) == 0 &&
+           __atomic_load_n(&m6c2_stress_peak, __ATOMIC_ACQUIRE) >=
+               M6C2_STRESS_PARALLEL;
+#else
+    return 1;
 #endif
 }
 
@@ -263,6 +312,8 @@ void m2c_selftest_poll(void)
 #endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
+    if (!m6c2_stress_ready())
+        return;
 
     u64 elapsed = r_mtime() - started_at;
     if (elapsed < QS_STRESS_MIN_TICKS)
@@ -272,7 +323,11 @@ void m2c_selftest_poll(void)
 
     printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
 #ifdef QS_M6B_TEST
-#ifdef QS_M6C2_TEST
+#ifdef QS_M6C2_STRESS
+    printk("QS:M6C2_STRESS_PARALLEL_OK\n");
+    printk("QS:M6C2_STRESS_RECONNECT_OK\n");
+    printk("QS:TEST_PASS:m6c2-stress\n");
+#elif defined(QS_M6C2_TEST)
     printk("QS:TEST_PASS:m6c2-smoke\n");
 #elif defined(QS_M6C1_TEST)
     printk("QS:TEST_PASS:m6c1-smoke\n");
