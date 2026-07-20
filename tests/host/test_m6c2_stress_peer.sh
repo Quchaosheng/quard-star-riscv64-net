@@ -72,6 +72,7 @@ def active_flow():
 
     return [
         segment(guest_isn, 0, peer.TCP_FLAG_SYN),
+        segment(guest_isn, 0, peer.TCP_FLAG_SYN),
         segment(guest_data, host_data, peer.TCP_FLAG_ACK),
         segment(guest_data, host_data,
                 peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
