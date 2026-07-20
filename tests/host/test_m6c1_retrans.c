@@ -411,7 +411,9 @@ static void test_handshake_and_receive(netif_t *netif,
     input_ok(netif, remote, &netif->ipaddr, fin);
     assert(pcb.state == TCP_STATE_TIME_WAIT);
     assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(!pcb.opened);
 }
 
 static void test_time_wait_expires(netif_t *netif, const ipaddr_t *remote)
@@ -483,6 +485,22 @@ static void test_simultaneous_close(netif_t *netif,
     assert(!pcb.opened);
 }
 
+static void test_peer_first_close(netif_t *netif, const ipaddr_t *remote)
+{
+    tcp_pcb_t pcb = { 0 };
+
+    establish(&pcb, netif, remote, 4807);
+    input_ok(netif, remote, &netif->ipaddr,
+             make_segment(remote, &netif->ipaddr, 4807, pcb.local_port,
+                          pcb.rcv_nxt, pcb.snd_nxt,
+                          TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0));
+    assert(pcb.state == TCP_STATE_TIME_WAIT);
+    assert(tcp_close(&pcb) == NET_ERR_OK);
+    assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
+    assert(!pcb.opened);
+}
+
 int main(void)
 {
     ipaddr_t remote;
@@ -507,6 +525,7 @@ int main(void)
     test_handshake_and_receive(netif, &remote);
     test_time_wait_expires(netif, &remote);
     test_simultaneous_close(netif, &remote);
+    test_peer_first_close(netif, &remote);
 
     assert(netif_set_deactive(netif) == NET_ERR_OK);
     assert(netif_close(netif) == NET_ERR_OK);
