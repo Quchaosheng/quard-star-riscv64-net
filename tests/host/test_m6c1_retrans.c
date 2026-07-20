@@ -494,6 +494,11 @@ static void test_peer_first_close(netif_t *netif, const ipaddr_t *remote)
              make_segment(remote, &netif->ipaddr, 4807, pcb.local_port,
                           pcb.rcv_nxt, pcb.snd_nxt,
                           TCP_FLAG_FIN | TCP_FLAG_ACK, 0, 0));
+    assert(pcb.state == TCP_STATE_FIN_WAIT_1);
+    assert(pcb.peer_fin_seen);
+    input_ok(netif, remote, &netif->ipaddr,
+             make_segment(remote, &netif->ipaddr, 4807, pcb.local_port,
+                          pcb.rcv_nxt, pcb.snd_nxt, TCP_FLAG_ACK, 0, 0));
     assert(pcb.state == TCP_STATE_TIME_WAIT);
     assert(tcp_close(&pcb) == NET_ERR_OK);
     assert(net_timer_check_tmo(TCP_TIME_WAIT_MS) == NET_ERR_OK);
