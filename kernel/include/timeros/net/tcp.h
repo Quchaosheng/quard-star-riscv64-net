@@ -13,7 +13,7 @@
 
 #define NET_SOCKET_STREAM 1
 #define TCP_HEADER_SIZE 20
-#define TCP_PCB_MAX 8
+#define TCP_PCB_MAX 12
 #define TCP_RECV_MAX 2048
 #define TCP_MSS 512
 #define TCP_RETRANS_MS 500
