@@ -32,4 +32,13 @@ poll=$(awk '
 printf '%s\n' "$poll" | grep -Fq 'm6c2_stress_ready()' || \
   fail 'final poll bypasses stress counter gate'
 
+for text in \
+  '#define STRESS_PARALLEL 8' \
+  '#define STRESS_RECONNECTS 100' \
+  'run_stress_server(listener)' \
+  'wait_peer_close'; do
+  grep -Fq "$text" "$root/user/tcp_server_echo.c" || \
+    fail "missing guest stress behavior $text"
+done
+
 echo 'PASS: M6C2 stress evidence contracts'
