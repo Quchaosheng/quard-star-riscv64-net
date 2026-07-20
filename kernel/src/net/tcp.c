@@ -1511,6 +1511,7 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
 #endif
 #ifdef QS_M6C2_TEST
     int passive_echo_ack = 0;
+    int passive_echo_complete = 0;
 #endif
     nlocker_lock(&pcb->state_locker);
     if ((int32_t)(ack - pcb->snd_una) < 0 ||
@@ -1525,6 +1526,10 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
                             pcb->state == TCP_STATE_ESTABLISHED;
 #endif
 #ifdef QS_M6C2_TEST
+        passive_echo_complete = pcb->passive != 0 && pcb->listener == 0 &&
+                                pcb->state == TCP_STATE_ESTABLISHED &&
+                                pktbuf_total(pcb->outstanding) >
+                                    TCP_HEADER_SIZE;
         passive_echo_ack = pcb->retry_count != 0 && pcb->passive != 0 &&
                            pcb->listener == 0 &&
                            pcb->state == TCP_STATE_ESTABLISHED;
@@ -1555,6 +1560,8 @@ static net_err_t tcp_accept_ack(tcp_pcb_t *pcb, uint32_t ack)
         m6c1_mark_tcp_retrans();
 #endif
 #ifdef QS_M6C2_TEST
+    if (passive_echo_complete)
+        m6c2_mark_tcp_echo_complete();
     if (passive_echo_ack)
         m6c2_mark_tcp_echo();
 #endif

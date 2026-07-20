@@ -25,10 +25,13 @@ static int output_count;
 static net_err_t next_output_error;
 static int child_close_markers;
 static int listener_close_markers;
+static int echo_complete_markers;
+static int echo_retrans_markers;
 
 void m6c2_mark_tcp_listen(void) { }
 void m6c2_mark_tcp_accept(void) { }
-void m6c2_mark_tcp_echo(void) { }
+void m6c2_mark_tcp_echo_complete(void) { echo_complete_markers++; }
+void m6c2_mark_tcp_echo(void) { echo_retrans_markers++; }
 void m6c2_mark_tcp_child_close(void) { child_close_markers++; }
 void m6c2_mark_tcp_listener_close(void) { listener_close_markers++; }
 
@@ -281,6 +284,37 @@ static void test_listen_handshake_and_accept(netif_t *netif)
     assert(net_timer_check_tmo(1) == NET_ERR_OK);
     assert(listener_close_markers == listener_before + 1);
     assert(child_close_markers == child_before + 1);
+}
+
+static void test_passive_echo_completion(netif_t *netif)
+{
+    static const uint8_t first[] = "first";
+    static const uint8_t second[] = "second";
+    ipaddr_t remote;
+    make_remote(&remote, 20);
+    tcp_pcb_t *listener = make_listener(netif, 1);
+    tcp_pcb_t *child = complete_handshake(listener, netif, &remote, 5050,
+                                          1500);
+    assert(tcp_accept_commit_acquired(listener, child) == NET_ERR_OK);
+
+    int complete_before = echo_complete_markers;
+    int retrans_before = echo_retrans_markers;
+    assert(tcp_send_start(child, first, (int)sizeof(first)) == NET_ERR_OK);
+    assert(input(netif, &remote, 5050, child->rcv_nxt,
+                 child->outstanding_end, TCP_FLAG_ACK) == NET_ERR_OK);
+    assert(echo_complete_markers == complete_before + 1);
+    assert(echo_retrans_markers == retrans_before);
+
+    assert(tcp_send_start(child, second, (int)sizeof(second)) == NET_ERR_OK);
+    assert(tcp_retransmit_due(child) == NET_ERR_OK);
+    assert(input(netif, &remote, 5050, child->rcv_nxt,
+                 child->outstanding_end, TCP_FLAG_ACK) == NET_ERR_OK);
+    assert(echo_complete_markers == complete_before + 2);
+    assert(echo_retrans_markers == retrans_before + 1);
+
+    close_attached(child);
+    assert(tcp_close(listener) == NET_ERR_OK);
+    assert(net_timer_check_tmo(1) == NET_ERR_OK);
 }
 
 static void test_backlog_limit(netif_t *netif)
@@ -570,6 +604,7 @@ int main(void)
     make_netif(&netif);
 
     test_listen_handshake_and_accept(&netif);
+    test_passive_echo_completion(&netif);
     test_backlog_limit(&netif);
     test_half_open_retry_release(&netif);
     test_unpeeked_waiter_does_not_pin_half_open(&netif);

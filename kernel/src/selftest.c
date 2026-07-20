@@ -226,12 +226,16 @@ void m6c2_mark_tcp_accept(void)
 #endif
 }
 
-void m6c2_mark_tcp_echo(void)
+void m6c2_mark_tcp_echo_complete(void)
 {
-#ifdef QS_M6C2_TEST
 #ifdef QS_M6C2_STRESS
     __atomic_add_fetch(&m6c2_stress_echoed, 1, __ATOMIC_RELAXED);
 #endif
+}
+
+void m6c2_mark_tcp_echo(void)
+{
+#ifdef QS_M6C2_TEST
     if (__atomic_exchange_n(&m6c2_echo_claimed, 1, __ATOMIC_ACQ_REL))
         return;
     printk("QS:M6C2_ECHO_OK\n");
