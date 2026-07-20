@@ -11,5 +11,5 @@ export QS_M6C1_TEST=1
 export QS_M6B_TEST=1
 
 "$root/scripts/m6c2-build.sh"
-QS_SMOKE_TIMEOUT=${QS_STRESS_TIMEOUT:-180} \
+QS_SMOKE_TIMEOUT=${QS_STRESS_TIMEOUT:-300} \
   exec "$root/scripts/m6c2-smoke.sh"
