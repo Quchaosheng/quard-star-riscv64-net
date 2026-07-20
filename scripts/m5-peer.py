@@ -615,6 +615,20 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 flags = tcp["flags"]
                 current_tuple = (tcp["src_port"], tcp["dst_port"])
                 if flags == TCP_FLAG_SYN:
+                    duplicate_syn = (
+                        require_tcp_server_stress and tcp_tuple is not None and
+                        not tcp_handshake_ack_seen and
+                        current_tuple == tcp_tuple and
+                        tcp["seq"] == tcp_guest_isn and tcp["ack"] == 0 and
+                        not tcp["payload"]
+                    )
+                    if duplicate_syn:
+                        peer.send(encode_tcp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            HOST_TCP_PORT, tcp["src_port"], 9000,
+                            tcp_guest_data_end,
+                            TCP_FLAG_SYN | TCP_FLAG_ACK))
+                        continue
                     if tcp_tuple is not None or tcp["ack"] != 0 or \
                             tcp["payload"]:
                         raise ValueError("unexpected second TCP SYN")
