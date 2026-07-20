@@ -16,9 +16,11 @@ grep -qx 'export QS_TEST_NAME=m6c2-smoke' "$root/scripts/m6c2-smoke.sh" || \
   fail 'missing M6C2 smoke name'
 grep -q 'm6c1-smoke.sh' "$root/scripts/m6c2-smoke.sh" || \
   fail 'M6C2 smoke must reuse M6C1'
+for definition in '__NR_listen 201' '__NR_accept 202'; do
+  grep -qx "#define $definition" "$root/kernel/include/timeros/syscall.h" || \
+    fail "missing exact $definition"
+done
 for name in listen accept; do
-  grep -q "^#define __NR_$name " "$root/kernel/include/timeros/syscall.h" || \
-    fail "missing __NR_$name"
   grep -q "case __NR_$name:" "$root/kernel/src/syscall.c" || \
     fail "missing $name dispatch"
   grep -q "sys_$name" "$root/kernel/lib/app.c" || \

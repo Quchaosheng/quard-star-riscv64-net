@@ -69,6 +69,17 @@ int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length)
     return syscall(__NR_bind, fd, (reg_t)(uintptr_t)address, address_length);
 }
 
+int sys_listen(int fd, int backlog)
+{
+    return syscall(__NR_listen, fd, backlog, 0);
+}
+
+int sys_accept(int fd, net_sockaddr_in *address, size_t *address_length)
+{
+    return syscall(__NR_accept, fd, (reg_t)(uintptr_t)address,
+                   (reg_t)(uintptr_t)address_length);
+}
+
 int sys_connect(int fd, const net_sockaddr_in *address,
                 size_t address_length)
 {

@@ -17,6 +17,8 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3);
 #define __NR_execve 221
 #define __NR_socket 198
 #define __NR_bind 200
+#define __NR_listen 201
+#define __NR_accept 202
 #define __NR_connect 203
 #define __NR_sendto 206
 #define __NR_recvfrom 207
@@ -76,6 +78,8 @@ int sys_exit(u64 exit_code);
 int sys_waitpid();
 int sys_socket(int domain, int type, int protocol);
 int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length);
+int sys_listen(int fd, int backlog);
+int sys_accept(int fd, net_sockaddr_in *address, size_t *address_length);
 int sys_connect(int fd, const net_sockaddr_in *address,
                 size_t address_length);
 int sys_send(int fd, const void *data, size_t length, int flags);
