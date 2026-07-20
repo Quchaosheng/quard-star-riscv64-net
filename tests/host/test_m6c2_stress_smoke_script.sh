@@ -61,6 +61,13 @@ exit "${QS_FAKE_PEER_EXIT:-0}"
 EOF
 chmod +x "$tmp/fake-peer"
 
+cat > "$tmp/fake-sudo" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+exec "$@"
+EOF
+chmod +x "$tmp/fake-sudo"
+
 cat > "$tmp/fake-qemu" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -128,7 +135,8 @@ chmod +x "$tmp/fake-qemu"
 run_stress()
 {
   PATH="$tmp:$PATH" QS_ROOT="$tmp" QS_QEMU="$tmp/fake-qemu" \
-  QS_M5_PEER="$tmp/fake-peer" QS_TAP_MANAGED=0 QS_TAP_IFACE=tap-test \
+  QS_M5_PEER="$tmp/fake-peer" QS_SUDO="$tmp/fake-sudo" \
+  QS_FORCE_PEER_SUDO=1 QS_TAP_MANAGED=0 QS_TAP_IFACE=tap-test \
   QS_SMOKE_TIMEOUT=2 "$root/scripts/m6c2-stress.sh"
 }
 
