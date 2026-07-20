@@ -23,6 +23,9 @@ IPPROTO_TCP = 6
 GUEST_UDP_PORT = 4600
 HOST_UDP_PORT = 4700
 HOST_TCP_PORT = 4800
+GUEST_TCP_SERVER_PORT = 4801
+HOST_TCP_SERVER_PORT = 4802
+TCP_SERVER_PAYLOAD = b"quard-star-m6c2"
 TCP_FLAG_FIN = 0x01
 TCP_FLAG_SYN = 0x02
 TCP_FLAG_PSH = 0x08
@@ -304,7 +307,8 @@ def write_stats(path: str | None, stats: dict, elapsed: float) -> None:
 
 def run_peer(interface: str, raw_count: int, timeout: float,
              ready_file: str | None, stats_file: str | None,
-             require_udp: bool = False, require_tcp: bool = False) -> int:
+             require_udp: bool = False, require_tcp: bool = False,
+             require_tcp_server: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -322,6 +326,13 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "tcp_retransmissions": 0,
         "tcp_fin": 0,
         "tcp_outstanding": 0,
+        "tcp_server_syn": 0,
+        "tcp_server_handshakes": 0,
+        "tcp_server_data": 0,
+        "tcp_server_echo": 0,
+        "tcp_server_retransmissions": 0,
+        "tcp_server_fin": 0,
+        "tcp_server_outstanding": 0,
     }
     expected_raw = 0
     host_arp_request_sent = False
@@ -335,6 +346,11 @@ def run_peer(interface: str, raw_count: int, timeout: float,
     tcp_data_seen = False
     tcp_echo_sent = False
     tcp_fin_sent = False
+    tcp_server_started = False
+    tcp_server_guest_isn = 0
+    tcp_server_guest_next = 0
+    tcp_server_host_next = 12000
+    tcp_server_state = "syn-ack"
 
     def complete() -> bool:
         return (
@@ -355,6 +371,15 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 stats["tcp_retransmissions"] >= 1 and
                 stats["tcp_fin"] >= 1 and
                 stats["tcp_outstanding"] == 0
+            )) and
+            (not require_tcp_server or (
+                stats["tcp_server_syn"] >= 1 and
+                stats["tcp_server_handshakes"] >= 1 and
+                stats["tcp_server_data"] >= 1 and
+                stats["tcp_server_echo"] >= 1 and
+                stats["tcp_server_retransmissions"] >= 1 and
+                stats["tcp_server_fin"] >= 1 and
+                stats["tcp_server_outstanding"] == 0
             ))
         )
 
@@ -499,6 +524,108 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                         tcp["ack"] != tcp_host_next or tcp["payload"]:
                     raise ValueError("unexpected TCP final ACK")
                 stats["tcp_outstanding"] = 0
+                if require_tcp_server and not tcp_server_started:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, 0, TCP_FLAG_SYN))
+                    tcp_server_started = True
+                    stats["tcp_server_syn"] += 1
+                continue
+            if tcp is not None and tcp_server_started and \
+                    tcp["src_mac"] == GUEST_MAC and \
+                    tcp["dst_mac"] == HOST_MAC and \
+                    tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["src_port"] == GUEST_TCP_SERVER_PORT and \
+                    tcp["dst_port"] == HOST_TCP_SERVER_PORT:
+                flags = tcp["flags"]
+                if tcp_server_state == "syn-ack":
+                    if flags != (TCP_FLAG_SYN | TCP_FLAG_ACK) or \
+                            tcp["ack"] != tcp_server_host_next + 1 or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server SYN-ACK")
+                    tcp_server_guest_isn = tcp["seq"]
+                    tcp_server_guest_next = tcp_server_guest_isn + 1
+                    tcp_server_host_next += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_ACK))
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_PSH | TCP_FLAG_ACK, TCP_SERVER_PAYLOAD))
+                    tcp_server_host_next += len(TCP_SERVER_PAYLOAD)
+                    stats["tcp_server_handshakes"] += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "data-ack"
+                    continue
+                if tcp_server_state == "data-ack":
+                    if flags != TCP_FLAG_ACK or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server data ACK")
+                    stats["tcp_server_data"] += 1
+                    stats["tcp_server_outstanding"] = 0
+                    tcp_server_state = "echo"
+                    continue
+                if tcp_server_state == "echo":
+                    if flags & TCP_FLAG_FIN:
+                        raise ValueError("premature TCP server FIN")
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"] != TCP_SERVER_PAYLOAD:
+                        raise ValueError("unexpected TCP server Echo")
+                    tcp_server_guest_next += len(TCP_SERVER_PAYLOAD)
+                    stats["tcp_server_echo"] += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "echo-retransmission"
+                    continue
+                if tcp_server_state == "echo-retransmission":
+                    if flags & TCP_FLAG_FIN:
+                        raise ValueError("premature TCP server FIN")
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_isn + 1 or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"] != TCP_SERVER_PAYLOAD:
+                        raise ValueError("unexpected TCP server retransmission")
+                    stats["tcp_server_retransmissions"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_ACK))
+                    stats["tcp_server_outstanding"] = 0
+                    tcp_server_state = "fin"
+                    continue
+                if tcp_server_state == "fin":
+                    if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server FIN")
+                    tcp_server_guest_next += 1
+                    stats["tcp_server_fin"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    tcp_server_host_next += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "final-ack"
+                    continue
+                if flags != TCP_FLAG_ACK or \
+                        tcp["seq"] != tcp_server_guest_next or \
+                        tcp["ack"] != tcp_server_host_next or tcp["payload"]:
+                    raise ValueError("unexpected TCP server final ACK")
+                stats["tcp_server_outstanding"] = 0
+                tcp_server_state = "complete"
                 continue
             if event is None:
                 continue
@@ -541,6 +668,7 @@ def main() -> int:
     parser.add_argument("--stats-file")
     parser.add_argument("--require-udp", action="store_true")
     parser.add_argument("--require-tcp", action="store_true")
+    parser.add_argument("--require-tcp-server", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
@@ -548,11 +676,10 @@ def main() -> int:
     try:
         return run_peer(args.interface, args.raw_count, args.timeout,
                         args.ready_file, args.stats_file, args.require_udp,
-                        args.require_tcp)
+                        args.require_tcp, args.require_tcp_server)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

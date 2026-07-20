@@ -45,6 +45,10 @@ int main(void)
 
     if (sys_close(fd) < 0)
         return fail("close");
+#ifdef QS_M6C2_TEST
+    if (sys_exec("tcp_server_echo") < 0)
+        return fail("server-exec");
+#endif
     while (1)
         sys_yield();
 }

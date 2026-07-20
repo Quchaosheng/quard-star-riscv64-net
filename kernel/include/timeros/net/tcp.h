@@ -90,6 +90,7 @@ struct _tcp_pcb_t {
     int accept_pins;
     int bound;
     int passive;
+    int accepted;
     int close_requested;
     int release_pending;
     int socket_attached;
