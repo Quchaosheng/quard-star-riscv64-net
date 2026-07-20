@@ -15,6 +15,11 @@ typedef struct _socket_entry_t {
 static socket_entry_t entries[NET_SOCKET_MAX];
 static nlocker_t socket_locker;
 
+#ifdef SOCKET_TEST
+void net_socket_test_waiter_acquired_hook(void);
+void net_socket_test_waiter_unlocked_hook(void);
+#endif
+
 static int socket_decode(int handle, int *slot, uint32_t *generation)
 {
     int index = handle & 0xff;
@@ -168,8 +173,19 @@ net_err_t net_socket_wait_connect(int handle, int timeout_ms)
         return NET_ERR_PARAM;
     }
     tcp_pcb_t *pcb = &entry->pcb.tcp;
+    net_err_t err = tcp_wait_connect_acquire(pcb);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
     nlocker_unlock(&socket_locker);
-    return tcp_wait_connect(pcb, timeout_ms);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_wait_connect_acquired(pcb, timeout_ms);
 }
 
 net_err_t net_socket_send(int handle, const uint8_t *data, int size)
@@ -183,6 +199,8 @@ net_err_t net_socket_send(int handle, const uint8_t *data, int size)
 
 int net_socket_recv(int handle, uint8_t *data, int size, int timeout_ms)
 {
+    if (data == 0 || size <= 0)
+        return NET_ERR_PARAM;
     nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
     if (entry == 0 || entry->type != NET_SOCKET_TCP) {
@@ -190,8 +208,19 @@ int net_socket_recv(int handle, uint8_t *data, int size, int timeout_ms)
         return NET_ERR_PARAM;
     }
     tcp_pcb_t *pcb = &entry->pcb.tcp;
+    net_err_t err = tcp_recv_acquire(pcb);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
     nlocker_unlock(&socket_locker);
-    return tcp_recv_bytes(pcb, data, size, timeout_ms);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_recv_bytes_acquired(pcb, data, size, timeout_ms);
 }
 
 net_err_t net_socket_wait_close(int handle, int timeout_ms)
@@ -202,18 +231,24 @@ net_err_t net_socket_wait_close(int handle, int timeout_ms)
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
-    if (!entry->pcb.tcp.opened) {
+    tcp_pcb_t *pcb = &entry->pcb.tcp;
+    net_err_t err = tcp_wait_close_acquire(pcb);
+    if (err == NET_ERR_PARAM) {
         nlocker_unlock(&socket_locker);
         return NET_ERR_OK;
     }
-    tcp_pcb_t *pcb = &entry->pcb.tcp;
-    nlocker_lock(&pcb->state_locker);
-    int complete = pcb->state == TCP_STATE_CLOSED && pcb->release_pending;
-    nlocker_unlock(&pcb->state_locker);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
     nlocker_unlock(&socket_locker);
-    if (complete)
-        return NET_ERR_OK;
-    return tcp_wait_close(pcb, timeout_ms);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_wait_close_acquired(pcb, timeout_ms);
 }
 
 net_err_t net_socket_sendto(int handle, netif_t *netif,
