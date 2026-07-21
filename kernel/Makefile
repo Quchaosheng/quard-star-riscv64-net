@@ -60,6 +60,8 @@ NET_SRCS_C = \
 	net/icmpv4.c \
 	net/loop.c \
 	net/net_stack.c \
+	net/dns.c \
+	net/dns_resolver.c \
 	net/udp.c \
 	net/tcp.c \
 	net/net_exec.c \

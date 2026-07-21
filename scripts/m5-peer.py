@@ -22,6 +22,7 @@ IPPROTO_UDP = 17
 IPPROTO_TCP = 6
 GUEST_UDP_PORT = 4600
 HOST_UDP_PORT = 4700
+DNS_PORT = 53
 HOST_TCP_PORT = 4800
 GUEST_TCP_SERVER_PORT = 4801
 HOST_TCP_SERVER_PORT = 4802
@@ -209,6 +210,22 @@ def encode_udp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
                      64, IPPROTO_UDP, 0, src_ip, dst_ip)
     ip = ip[:10] + struct.pack("!H", checksum16(ip)) + ip[12:]
     return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + udp)
+
+
+def dns_response(query: bytes, address: bytes) -> bytes | None:
+    if len(query) < 17 or struct.unpack_from("!HHHH", query, 4) != \
+            (1, 0, 0, 0):
+        return None
+    question = query[12:]
+    if question == b"\x03m7a\x04test\x00\x00\x01\x00\x01":
+        pass
+    elif question == b"\x07timeout\x03m7a\x00\x00\x01\x00\x01":
+        return b""
+    else:
+        return None
+    return query[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" + \
+        question + b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x1e\x00\x04" + \
+        address
 
 
 def encode_tcp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
@@ -548,7 +565,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
              ready_file: str | None, stats_file: str | None,
              require_udp: bool = False, require_tcp: bool = False,
              require_tcp_server: bool = False,
-             require_tcp_server_stress: bool = False) -> int:
+             require_tcp_server_stress: bool = False,
+             require_dns: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -561,6 +579,9 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "host_echo_replies": 0,
         "udp_requests": 0,
         "udp_replies": 0,
+        "dns_queries": 0,
+        "dns_replies": 0,
+        "dns_timeouts": 0,
         "tcp_syn": 0,
         "tcp_data": 0,
         "tcp_retransmissions": 0,
@@ -612,6 +633,11 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             (not require_udp or (
                 stats["udp_requests"] >= 1 and
                 stats["udp_replies"] >= 1
+            )) and
+            (not require_dns or (
+                stats["dns_queries"] >= 2 and
+                stats["dns_replies"] >= 1 and
+                stats["dns_timeouts"] >= 1
             )) and
             (not require_tcp or (
                 stats["tcp_syn"] >= 1 and
@@ -694,6 +720,21 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 continue
             event = decode_icmp_echo(frame)
             udp = decode_udp(frame)
+            if require_dns and udp is not None and \
+                    udp[0] == GUEST_IP and udp[1] == HOST_IP and \
+                    udp[3] == DNS_PORT:
+                stats["dns_queries"] += 1
+                response = dns_response(udp[4], b"\xc0\xa8\x64\x01")
+                if response == b"":
+                    stats["dns_timeouts"] += 1
+                elif response is None:
+                    raise ValueError("unexpected DNS query")
+                else:
+                    peer.send(encode_udp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        DNS_PORT, udp[2], response))
+                    stats["dns_replies"] += 1
+                continue
             if udp is not None and udp[0] == GUEST_IP and \
                     udp[1] == HOST_IP and udp[2] == GUEST_UDP_PORT and \
                     udp[3] == HOST_UDP_PORT:
@@ -984,6 +1025,7 @@ def main() -> int:
     parser.add_argument("--require-tcp", action="store_true")
     parser.add_argument("--require-tcp-server", action="store_true")
     parser.add_argument("--require-tcp-server-stress", action="store_true")
+    parser.add_argument("--require-dns", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
@@ -992,7 +1034,7 @@ def main() -> int:
         return run_peer(args.interface, args.raw_count, args.timeout,
                         args.ready_file, args.stats_file, args.require_udp,
                         args.require_tcp, args.require_tcp_server,
-                        args.require_tcp_server_stress)
+                        args.require_tcp_server_stress, args.require_dns)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1

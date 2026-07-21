@@ -18,7 +18,9 @@ int main()
     }
 #endif
 
-#if defined(QS_M6C1_TEST) || defined(QS_M6B_TEST)
+#if defined(QS_M7A_TEST)
+    sys_exec("udp_echo");
+#elif defined(QS_M6C1_TEST) || defined(QS_M6B_TEST)
     sys_exec("udp_echo");
 #else
     sys_exec("user_shell");
