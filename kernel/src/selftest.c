@@ -325,7 +325,7 @@ void m2c_selftest_poll(void)
     if (__atomic_exchange_n(&finished, 1, __ATOMIC_ACQ_REL))
         return;
 
-    printk("QS:STRESS_ELAPSED_TICKS:%d\n", (int)elapsed);
+    printk("QS:STRESS_ELAPSED_TICKS:%ld\n", (long)elapsed);
 #ifdef QS_M6B_TEST
 #ifdef QS_M6C2_STRESS
     printk("QS:M6C2_STRESS_PARALLEL_OK\n");
