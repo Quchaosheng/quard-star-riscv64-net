@@ -10,7 +10,7 @@ a response, and close the connection through the existing ABI.
 ## Scope
 
 - Resolve `m7a.test` through the existing M7A DNS syscall.
-- Connect to `192.168.100.1:8080` with the existing TCP socket syscall.
+- Connect to `192.168.100.1:4800` with the existing TCP socket syscall.
 - Send one fixed HTTP/1.0 `GET /m7b.txt` request with `Connection: close`.
 - Receive and validate an HTTP `200` response with a fixed `Content-Length` and
   body, allowing the response to arrive in multiple TCP reads.

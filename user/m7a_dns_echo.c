@@ -20,8 +20,13 @@ int main(void)
     if (sys_dns_resolve("timeout.m7a", &address) != -4)
         return fail("timeout");
     printf("QS:M7A_DNS_TIMEOUT_OK\n");
+#ifdef QS_M7B_TEST
+    if (sys_exec("m7b_http_get") < 0)
+        return fail("http-exec");
+#else
     if (sys_dns_complete() < 0)
         return fail("complete");
+#endif
     while (1)
         sys_yield();
 }

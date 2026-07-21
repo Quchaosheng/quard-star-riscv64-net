@@ -478,7 +478,7 @@ static int __sys_close(int handle)
         m6b_timeout_handle = -1;
     }
 #endif
-    return result < 0 ? result : wait_result;
+    return result < 0 ? result : NET_ERR_OK;
 }
 
 static int __sys_dns_resolve(const char *user_name, u32 *user_address)
@@ -503,6 +503,9 @@ static int __sys_dns_resolve(const char *user_name, u32 *user_address)
 static int __sys_dns_complete(void)
 {
     m7a_mark_dns_complete();
+#ifdef QS_M7B_TEST
+    m7b_mark_http_complete();
+#endif
     return NET_ERR_OK;
 }
 

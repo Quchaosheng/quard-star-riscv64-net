@@ -9,7 +9,8 @@
 
 ## Task 2: Guest HTTP probe
 
-- Add `user/m7b_http_get.c` after the M7A application chain.
+- Add `user/m7b_http_get.c` after the M7A application chain; use the existing
+  validated TCP peer port `4800` for the first HTTP slice.
 - Resolve `m7a.test`, connect to port 8080, send the fixed request, receive
   until the complete response is validated, and close on every failure path.
 - Add M7B build flags, markers, and cumulative smoke requirements.
