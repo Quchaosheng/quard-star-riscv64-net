@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -fno-sanitize-recover=all \
+  -I"$root/kernel/include" -I"$root/kernel/include/timeros/net" \
+  "$root/tests/host/test_m7a_dns.c" \
+  "$root/kernel/src/net/dns.c" \
+  "$root/kernel/src/net/ipaddr.c" \
+  -o "$tmp/test_m7a_dns"
+ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
+  UBSAN_OPTIONS=halt_on_error=1 "$tmp/test_m7a_dns"
+
+echo 'PASS: M7A DNS codec behavior'
