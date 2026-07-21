@@ -66,8 +66,13 @@ int main(void)
     if (close_result < 0)
         return fail(-1, "close");
     printf("QS:M7B_HTTP_CLOSE_OK\n");
+#ifdef QS_M7C_TEST
+    if (sys_exec("m7c_ntp_get") < 0)
+        return fail(-1, "ntp-exec");
+#else
     if (sys_dns_complete() < 0)
         return fail(-1, "complete");
+#endif
     while (1)
         sys_yield();
 }

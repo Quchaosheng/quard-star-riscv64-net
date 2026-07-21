@@ -36,5 +36,6 @@ void m6c2_mark_tcp_child_close(void);
 void m6c2_mark_tcp_listener_close(void);
 void m7a_mark_dns_complete(void);
 void m7b_mark_http_complete(void);
+void m7c_mark_ntp_complete(void);
 
 #endif
