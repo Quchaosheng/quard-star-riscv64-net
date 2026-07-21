@@ -56,8 +56,13 @@ int main(void)
     printf("QS:M7C_NTP_TIMEOUT_OK\n");
     if (sys_close(fd) < 0)
         return fail(-1, "close");
+#ifdef QS_M7D_TEST
+    if (sys_exec("m7d_tftp_get") < 0)
+        return fail(-1, "tftp-exec");
+#else
     if (sys_dns_complete() < 0)
         return fail(-1, "complete");
+#endif
     while (1)
         sys_yield();
 }
