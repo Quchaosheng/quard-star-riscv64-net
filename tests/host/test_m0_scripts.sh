@@ -95,4 +95,13 @@ if grep -q -- '--recursive' "$root/Makefile"; then
   fail "deps should initialize only direct project submodules"
 fi
 
+grep -qx '\*.patch text eol=lf' "$root/.gitattributes" || \
+  fail "patch files must retain LF endings"
+grep -qx 'patches/\*\*/series text eol=lf' "$root/.gitattributes" || \
+  fail "patch series files must retain LF endings"
+grep -q 'marker=\$tree/.qs-patch-applied' "$root/scripts/m1-build.sh" || \
+  fail "prepared source trees need a completed-patch marker"
+grep -q 'git -C "$staging" apply "$patch"' "$root/scripts/m1-build.sh" || \
+  fail "patches must be applied before publishing cached source trees"
+
 echo "PASS: M0 script behavior"
