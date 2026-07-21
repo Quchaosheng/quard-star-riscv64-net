@@ -506,6 +506,9 @@ static int __sys_dns_complete(void)
 #ifdef QS_M7B_TEST
     m7b_mark_http_complete();
 #endif
+#ifdef QS_M7C_TEST
+    m7c_mark_ntp_complete();
+#endif
     return NET_ERR_OK;
 }
 

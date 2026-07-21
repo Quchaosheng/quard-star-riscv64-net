@@ -23,6 +23,8 @@ IPPROTO_TCP = 6
 GUEST_UDP_PORT = 4600
 HOST_UDP_PORT = 4700
 DNS_PORT = 53
+NTP_PORT = 123
+NTP_TIMEOUT_PORT = 124
 HOST_TCP_PORT = 4800
 GUEST_TCP_SERVER_PORT = 4801
 HTTP_PORT = 4800
@@ -231,6 +233,17 @@ def dns_response(query: bytes, address: bytes) -> bytes | None:
     return query[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" + \
         question + b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x1e\x00\x04" + \
         address
+
+
+def ntp_response(query: bytes) -> bytes | None:
+    if len(query) != 48 or query[0] != 0x1b:
+        return None
+    response = bytearray(48)
+    response[0] = 0x24
+    response[1] = 1
+    response[24:32] = query[40:48]
+    response[40:44] = bytes.fromhex("83aa7efb")
+    return bytes(response)
 
 
 def encode_tcp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
@@ -571,7 +584,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
              require_udp: bool = False, require_tcp: bool = False,
              require_tcp_server: bool = False,
              require_tcp_server_stress: bool = False,
-             require_dns: bool = False, require_http: bool = False) -> int:
+             require_dns: bool = False, require_http: bool = False,
+             require_ntp: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -590,6 +604,9 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "http_requests": 0,
         "http_responses": 0,
         "http_outstanding": 0,
+        "ntp_queries": 0,
+        "ntp_replies": 0,
+        "ntp_timeouts": 0,
         "tcp_syn": 0,
         "tcp_data": 0,
         "tcp_retransmissions": 0,
@@ -655,6 +672,11 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 stats["http_requests"] >= 1 and
                 stats["http_responses"] >= 1 and
                 stats["http_outstanding"] == 0
+            )) and
+            (not require_ntp or (
+                stats["ntp_queries"] >= 1 and
+                stats["ntp_replies"] >= 1 and
+                stats["ntp_timeouts"] >= 1
             )) and
             (not require_tcp or (
                 stats["tcp_syn"] >= 1 and
@@ -752,6 +774,21 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                         DNS_PORT, udp[2], response))
                     stats["dns_replies"] += 1
                 continue
+            if require_ntp and udp is not None and \
+                    udp[0] == GUEST_IP and \
+                    udp[3] in (NTP_PORT, NTP_TIMEOUT_PORT):
+                stats["ntp_queries"] += 1
+                if udp[1] != HOST_IP or udp[3] == NTP_TIMEOUT_PORT:
+                    stats["ntp_timeouts"] += 1
+                    continue
+                response = ntp_response(udp[4])
+                if response is None:
+                    raise ValueError("unexpected NTP query")
+                peer.send(encode_udp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    NTP_PORT, udp[2], response))
+                stats["ntp_replies"] += 1
+                continue
             if udp is not None and udp[0] == GUEST_IP and \
                     udp[1] == HOST_IP and udp[2] == GUEST_UDP_PORT and \
                     udp[3] == HOST_UDP_PORT:
@@ -841,10 +878,20 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     http_state = "fin"
                     continue
                 if http_state == "fin":
+                    if flags == TCP_FLAG_ACK and \
+                            tcp["seq"] == http_guest_next and \
+                            tcp["ack"] == http_host_next and \
+                            not tcp["payload"]:
+                        continue
                     if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
                             tcp["seq"] != http_guest_next or \
                             tcp["ack"] != http_host_next or tcp["payload"]:
-                        raise ValueError("unexpected HTTP FIN")
+                        raise ValueError(
+                            "unexpected HTTP FIN "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq={http_guest_next} "
+                            f"expected_ack={http_host_next} "
+                            f"payload={len(tcp['payload'])}")
                     peer.send(encode_tcp(
                         HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
                         HTTP_PORT, tcp["src_port"], http_host_next,
@@ -854,9 +901,24 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     stats["http_outstanding"] = 1
                     http_state = "final"
                     continue
+                if http_state in ("final", "complete") and \
+                        flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                        tcp["seq"] + 1 == http_guest_next and \
+                        tcp["ack"] == http_host_next - 1 and \
+                        not tcp["payload"]:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HTTP_PORT, tcp["src_port"], http_host_next - 1,
+                        http_guest_next, TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    continue
                 if flags != TCP_FLAG_ACK or tcp["seq"] != http_guest_next or \
                         tcp["ack"] != http_host_next or tcp["payload"]:
-                    raise ValueError("unexpected HTTP final ACK")
+                    raise ValueError(
+                        "unexpected HTTP final ACK "
+                        f"flags={flags:#x} seq={tcp['seq']} ack={tcp['ack']} "
+                        f"expected_seq={http_guest_next} "
+                        f"expected_ack={http_host_next} "
+                        f"payload={len(tcp['payload'])}")
                 stats["http_outstanding"] = 0
                 http_state = "complete"
                 continue
@@ -1143,6 +1205,7 @@ def main() -> int:
     parser.add_argument("--require-tcp-server-stress", action="store_true")
     parser.add_argument("--require-dns", action="store_true")
     parser.add_argument("--require-http", action="store_true")
+    parser.add_argument("--require-ntp", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
@@ -1152,7 +1215,7 @@ def main() -> int:
                         args.ready_file, args.stats_file, args.require_udp,
                         args.require_tcp, args.require_tcp_server,
                         args.require_tcp_server_stress, args.require_dns,
-                        args.require_http)
+                        args.require_http, args.require_ntp)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
