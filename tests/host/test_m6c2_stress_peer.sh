@@ -81,6 +81,8 @@ def active_flow():
                 peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
         segment(guest_data, host_data,
                 peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
+        segment(guest_data, host_data,
+                peer.TCP_FLAG_PSH | peer.TCP_FLAG_ACK, payload),
         segment(guest_end, host_end, peer.TCP_FLAG_ACK),
         segment(guest_end, host_end, peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK),
         segment(guest_end, host_end, peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK),
