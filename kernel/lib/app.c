@@ -120,3 +120,14 @@ int sys_close(int fd)
 {
     return syscall(__NR_close, fd, 0, 0);
 }
+
+int sys_dns_resolve(const char *name, uint32_t *address)
+{
+    return syscall(__NR_dns_resolve, (reg_t)(uintptr_t)name,
+                   (reg_t)(uintptr_t)address, 0);
+}
+
+int sys_dns_complete(void)
+{
+    return syscall(__NR_dns_complete, 0, 0, 0);
+}

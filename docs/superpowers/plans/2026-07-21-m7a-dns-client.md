@@ -101,7 +101,7 @@ git commit -m "feat: resolve dns a records over udp"
 ### Task 3: Add The Guest Probe And Build Stage
 
 **Files:**
-- Create: `user/dns_echo.c`
+- Create: `user/m7a_dns_echo.c`
 - Modify: `user/Makefile`
 - Create: `scripts/m7a-build.sh`
 - Create: `scripts/m7a-smoke.sh`

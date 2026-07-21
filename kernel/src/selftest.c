@@ -67,6 +67,7 @@ static u32 completed;
 static u32 finished;
 static u32 m6c2_echo_claimed;
 static u32 m6c2_close_claimed;
+static u32 m7a_dns_complete;
 #ifdef QS_M6C2_STRESS
 static u32 m6c2_stress_accepted;
 static u32 m6c2_stress_echoed;
@@ -92,6 +93,7 @@ void m2c_selftest_init(void)
     __atomic_store_n(&finished, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&m6c2_echo_claimed, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&m6c2_close_claimed, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&m7a_dns_complete, 0, __ATOMIC_RELAXED);
 #ifdef QS_M6C2_STRESS
     __atomic_store_n(&m6c2_stress_accepted, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&m6c2_stress_echoed, 0, __ATOMIC_RELAXED);
@@ -257,6 +259,13 @@ void m6c2_mark_tcp_listener_close(void)
     m6c2_mark(M6C2_LISTENER_CLOSE_DONE);
 }
 
+void m7a_mark_dns_complete(void)
+{
+#ifdef QS_M7A_TEST
+    __atomic_store_n(&m7a_dns_complete, 1, __ATOMIC_RELEASE);
+#endif
+}
+
 static void m6c2_publish_close(void)
 {
 #ifdef QS_M6C2_TEST
@@ -314,6 +323,11 @@ void m2c_selftest_poll(void)
 #ifdef QS_M6C2_TEST
     required = M6C2_ALL_DONE;
 #endif
+#ifdef QS_M7A_TEST
+    required = M6B_ALL_DONE;
+    if (!__atomic_load_n(&m7a_dns_complete, __ATOMIC_ACQUIRE))
+        return;
+#endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
     if (!m6c2_stress_ready())
@@ -326,7 +340,9 @@ void m2c_selftest_poll(void)
         return;
 
     printk("QS:STRESS_ELAPSED_TICKS:%ld\n", (long)elapsed);
-#ifdef QS_M6B_TEST
+#ifdef QS_M7A_TEST
+    printk("QS:TEST_PASS:m7a-smoke\n");
+#elif defined(QS_M6B_TEST)
 #ifdef QS_M6C2_STRESS
     printk("QS:M6C2_STRESS_PARALLEL_OK\n");
     printk("QS:M6C2_STRESS_RECONNECT_OK\n");
