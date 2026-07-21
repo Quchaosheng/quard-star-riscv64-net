@@ -140,13 +140,17 @@ def stress_parts(index):
     return exchange, close
 
 
-def stress_flow(connection_count=108, duplicate_first_fin=False):
+def stress_flow(connection_count=108, duplicate_first_fin=False,
+                duplicate_first_syn_ack=False):
     exchanges = []
     closes = []
     parallel = min(connection_count, peer.STRESS_PARALLEL)
     for index in range(parallel):
         exchange, close = stress_parts(index)
-        exchanges.extend(exchange)
+        exchanges.append(exchange[0])
+        if index == 0 and duplicate_first_syn_ack:
+            exchanges.append(exchange[0])
+        exchanges.extend(exchange[1:])
         closes.extend(close)
         if index == 0 and duplicate_first_fin:
             closes.append(close[-1])
@@ -207,6 +211,10 @@ assert server_syns[0] == server_syns[1]
 result, _, stats = run(stress_flow(duplicate_first_fin=True))
 assert result == 0
 assert stats["tcp_server_stress_fin"] == 108
+
+result, _, stats = run(stress_flow(duplicate_first_syn_ack=True))
+assert result == 0
+assert stats["tcp_server_stress_handshakes"] == 108
 
 
 def rejected(frames):
