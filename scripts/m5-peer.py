@@ -425,11 +425,23 @@ class PassiveTcpStress:
             return
 
         if state == "echo":
+            if flags == TCP_FLAG_ACK and \
+                    segment["seq"] == connection["guest_next"] and \
+                    segment["ack"] == connection["host_next"] and \
+                    not segment["payload"]:
+                return
             if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
                     segment["seq"] != connection["guest_next"] or \
                     segment["ack"] != connection["host_next"] or \
                     segment["payload"] != connection["payload"]:
-                raise ValueError("unexpected TCP stress Echo")
+                raise ValueError(
+                    "unexpected TCP stress Echo "
+                    f"flags={flags:#x} seq={segment['seq']} "
+                    f"ack={segment['ack']} expected_seq="
+                    f"{connection['guest_next']} expected_ack="
+                    f"{connection['host_next']} "
+                    f"payload={len(segment['payload'])}"
+                )
             connection["guest_next"] += len(connection["payload"])
             self._send(connection, TCP_FLAG_ACK)
             connection["state"] = "held"
@@ -459,11 +471,30 @@ class PassiveTcpStress:
             return
 
         if state == "closing":
+            if flags == (TCP_FLAG_PSH | TCP_FLAG_ACK) and \
+                    segment["seq"] + len(segment["payload"]) == \
+                        connection["guest_next"] and \
+                    segment["ack"] + 1 == connection["host_next"] and \
+                    segment["payload"] == connection["payload"]:
+                self.peer.send(encode_tcp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    connection["host_port"], GUEST_TCP_SERVER_PORT,
+                    connection["host_next"] - 1,
+                    connection["guest_next"],
+                    TCP_FLAG_FIN | TCP_FLAG_ACK))
+                return
             expected = (segment["seq"] == connection["guest_next"] and
                         segment["ack"] == connection["host_next"] and
                         not segment["payload"])
             if not expected:
-                raise ValueError("unexpected TCP stress close sequence")
+                raise ValueError(
+                    "unexpected TCP stress close sequence "
+                    f"flags={flags:#x} seq={segment['seq']} "
+                    f"ack={segment['ack']} expected_seq="
+                    f"{connection['guest_next']} expected_ack="
+                    f"{connection['host_next']} "
+                    f"payload={len(segment['payload'])}"
+                )
             if flags == TCP_FLAG_ACK:
                 if not connection["fin_acked"]:
                     connection["fin_acked"] = True
@@ -473,6 +504,13 @@ class PassiveTcpStress:
                 self._finish(connection)
                 return
             raise ValueError("unexpected TCP stress close flags")
+
+        if state == "complete" and \
+                flags == TCP_FLAG_ACK and \
+                segment["seq"] == connection["guest_next"] and \
+                segment["ack"] == connection["host_next"] and \
+                not segment["payload"]:
+            return
 
         if state == "complete" and \
                 flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
