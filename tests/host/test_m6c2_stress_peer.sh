@@ -47,7 +47,10 @@ class FakeSocket:
         assert capacity == peer.ETHERNET_MAX_FRAME
         if not self.frames:
             raise TimeoutError("fake frame stream exhausted")
-        return self.frames.pop(0), ("tap-test", 0, 0, 0)
+        frame = self.frames.pop(0)
+        if frame is None:
+            raise peer.socket.timeout("injected timeout")
+        return frame, ("tap-test", 0, 0, 0)
 
     def send(self, frame):
         self.sent.append(frame)
@@ -135,7 +138,7 @@ def stress_parts(index):
     return exchange, close
 
 
-def stress_flow(connection_count=108):
+def stress_flow(connection_count=108, duplicate_first_fin=False):
     exchanges = []
     closes = []
     parallel = min(connection_count, peer.STRESS_PARALLEL)
@@ -143,6 +146,8 @@ def stress_flow(connection_count=108):
         exchange, close = stress_parts(index)
         exchanges.extend(exchange)
         closes.extend(close)
+        if index == 0 and duplicate_first_fin:
+            closes.append(close[-1])
     frames = exchanges + closes
     for index in range(peer.STRESS_PARALLEL, connection_count):
         exchange, close = stress_parts(index)
@@ -150,8 +155,11 @@ def stress_flow(connection_count=108):
     return frames
 
 
-def run(stress_frames):
-    fake = FakeSocket(common_frames(active_flow() + stress_frames))
+def run(stress_frames, drop_first_syn=False):
+    frames = active_flow()
+    if drop_first_syn:
+        frames.append(None)
+    fake = FakeSocket(common_frames(frames + stress_frames))
     original_socket = peer.socket.socket
     peer.socket.socket = lambda *args, **kwargs: fake
     try:
@@ -182,6 +190,21 @@ server_syns = [
 ]
 assert len(server_syns) == 108
 assert len({segment["src_port"] for segment in server_syns}) == 108
+
+result, sent, stats = run(stress_flow(), drop_first_syn=True)
+assert result == 0
+server_syns = [
+    segment for frame in sent
+    if (segment := peer.decode_tcp(frame)) is not None and
+    segment["dst_port"] == peer.GUEST_TCP_SERVER_PORT and
+    segment["flags"] == peer.TCP_FLAG_SYN
+]
+assert len(server_syns) == 109
+assert server_syns[0] == server_syns[1]
+
+result, _, stats = run(stress_flow(duplicate_first_fin=True))
+assert result == 0
+assert stats["tcp_server_stress_fin"] == 108
 
 
 def rejected(frames):

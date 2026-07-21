@@ -342,6 +342,11 @@ class PassiveTcpStress:
     def start(self) -> None:
         self._open(0)
 
+    def retry_pending_syns(self) -> None:
+        for connection in self.connections.values():
+            if connection["state"] == "syn-ack":
+                self._send(connection, TCP_FLAG_SYN)
+
     def _send_fin(self, connection: dict) -> None:
         self._send(connection, TCP_FLAG_FIN | TCP_FLAG_ACK)
         connection["host_next"] += 1
@@ -439,7 +444,21 @@ class PassiveTcpStress:
                 return
             raise ValueError("unexpected TCP stress close flags")
 
-        raise ValueError("unexpected completed TCP stress connection")
+        if state == "complete" and \
+                flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                segment["seq"] + 1 == connection["guest_next"] and \
+                segment["ack"] == connection["host_next"] and \
+                not segment["payload"]:
+            self._send(connection, TCP_FLAG_ACK)
+            return
+
+        raise ValueError(
+            "unexpected completed TCP stress connection "
+            f"flags={flags:#x} seq={segment['seq']} ack={segment['ack']} "
+            f"expected_seq={connection['guest_next']} "
+            f"expected_ack={connection['host_next']} "
+            f"payload={len(segment['payload'])}"
+        )
 
     def complete(self) -> bool:
         return (
@@ -558,8 +577,15 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"timed out with stats {stats}")
-            peer.settimeout(remaining)
-            frame, address = peer.recvfrom(ETHERNET_MAX_FRAME)
+            peer.settimeout(min(remaining, 0.5)
+                            if tcp_server_stress is not None else remaining)
+            try:
+                frame, address = peer.recvfrom(ETHERNET_MAX_FRAME)
+            except socket.timeout:
+                if tcp_server_stress is None:
+                    raise
+                tcp_server_stress.retry_pending_syns()
+                continue
             if len(address) > 2 and address[2] == socket.PACKET_OUTGOING:
                 continue
             ethertype = struct.unpack_from("!H", frame, 12)[0] \
@@ -688,7 +714,13 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
                             tcp["seq"] != tcp_guest_data_end or \
                             tcp["ack"] != tcp_host_next or tcp["payload"]:
-                        raise ValueError("unexpected TCP FIN")
+                        raise ValueError(
+                            "unexpected TCP FIN "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq="
+                            f"{tcp_guest_data_end} expected_ack="
+                            f"{tcp_host_next} payload={len(tcp['payload'])}"
+                        )
                     stats["tcp_fin"] += 1
                     peer.send(encode_tcp(
                         HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
