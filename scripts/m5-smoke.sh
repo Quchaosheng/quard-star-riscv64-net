@@ -19,7 +19,7 @@ smoke_pid=
 if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ] && \
   [ "$test_name" != m6b-smoke ] && [ "$test_name" != m6c1-smoke ] && \
   [ "$test_name" != m6c2-smoke ] && [ "$test_name" != m6c2-stress ] && \
-  [ "$test_name" != m7a-smoke ]; then
+  [ "$test_name" != m7a-smoke ] && [ "$test_name" != m7b-smoke ]; then
   echo "error: unsupported M5 test name $test_name" >&2
   exit 1
 fi
@@ -62,6 +62,8 @@ elif [ "$test_name" = m6c2-smoke ]; then
   set -- "$@" --require-udp --require-tcp --require-tcp-server
 elif [ "$test_name" = m7a-smoke ]; then
   set -- "$@" --require-dns
+elif [ "$test_name" = m7b-smoke ]; then
+  set -- "$@" --require-dns --require-http
 fi
 peer_needs_sudo=0
 if [ "${QS_FORCE_PEER_SUDO:-0}" = 1 ]; then
@@ -105,12 +107,13 @@ export QS_TAP_IFACE=$iface
 extra_m6_markers=
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
   [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
-  [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ]; then
+  [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ] || \
+  [ "$test_name" = m7b-smoke ]; then
   extra_m6_markers='QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK'
 fi
 if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
   [ "$test_name" = m6c2-smoke ] || [ "$test_name" = m6c2-stress ] || \
-  [ "$test_name" = m7a-smoke ]; then
+  [ "$test_name" = m7a-smoke ] || [ "$test_name" = m7b-smoke ]; then
   extra_m6_markers="$extra_m6_markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
 fi
 if [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
@@ -126,6 +129,8 @@ fi
 extra_m7_markers=
 if [ "$test_name" = m7a-smoke ]; then
   extra_m7_markers='QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK'
+elif [ "$test_name" = m7b-smoke ]; then
+  extra_m7_markers='QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK'
 fi
 export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK $extra_m6_markers $extra_m7_markers QS:TEST_PASS:$test_name"
 export QS_SMOKE_TIMEOUT=${QS_SMOKE_TIMEOUT:-60}
@@ -154,7 +159,8 @@ if [ "$peer_status" -ne 0 ]; then
 fi
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
   [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
-  [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ]; then
+  [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ] || \
+  [ "$test_name" = m7b-smoke ]; then
   markers="QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK QS:TEST_PASS:$test_name"
   if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
     [ "$test_name" = m6c2-smoke ] || [ "$test_name" = m6c2-stress ] || \
@@ -173,6 +179,8 @@ if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
   fi
   if [ "$test_name" = m7a-smoke ]; then
     markers="$markers QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK"
+  elif [ "$test_name" = m7b-smoke ]; then
+    markers="$markers QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK"
   fi
   for marker in $markers; do
     count=$(tr -d '\000\r' < "$out/qemu.log" | grep -Fxc "$marker" || true)
@@ -247,10 +255,15 @@ required = (
         data.get("udp_requests", 0) >= 1 and
         data.get("udp_replies", 0) >= 1
     )) and
-    (sys.argv[3] != "m7a-smoke" or (
+    (sys.argv[3] not in ("m7a-smoke", "m7b-smoke") or (
         data.get("dns_queries", 0) >= 2 and
         data.get("dns_replies", 0) >= 1 and
         data.get("dns_timeouts", 0) >= 1
+    )) and
+    (sys.argv[3] != "m7b-smoke" or (
+        data.get("http_requests", 0) >= 1 and
+        data.get("http_responses", 0) >= 1 and
+        data.get("http_outstanding", -1) == 0
     )) and
     (sys.argv[3] not in ("m6c1-smoke", "m6c2-smoke", "m6c2-stress") or (
         data.get("tcp_syn", 0) >= 1 and
@@ -294,6 +307,8 @@ elif [ "$test_name" = m6c2-stress ]; then
   echo "PASS: $test_name TAP eight-live/100-reconnect TCP acceptance"
 elif [ "$test_name" = m7a-smoke ]; then
   echo "PASS: $test_name TAP DNS acceptance"
+elif [ "$test_name" = m7b-smoke ]; then
+  echo "PASS: $test_name TAP DNS/HTTP acceptance"
 else
   echo "PASS: $test_name TAP ARP/ICMP acceptance"
 fi

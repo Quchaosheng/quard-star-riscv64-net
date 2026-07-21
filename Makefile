@@ -1,4 +1,4 @@
-.PHONY: check-env deps check-sources test-host m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke
+.PHONY: check-env deps check-sources test-host m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke m7b-build m7b-smoke
 
 check-env:
 	./scripts/check-env.sh
@@ -73,6 +73,10 @@ test-host:
 	./tests/host/test_m7a_contracts.sh
 	./tests/host/test_m7a_peer.sh
 	./tests/host/test_m7a_smoke_script.sh
+	./tests/host/test_m7b_http.sh
+	./tests/host/test_m7b_contracts.sh
+	./tests/host/test_m7b_peer.sh
+	./tests/host/test_m7b_smoke_script.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
@@ -157,3 +161,9 @@ m7a-build: check-env check-sources
 
 m7a-smoke:
 	./scripts/m7a-smoke.sh
+
+m7b-build: check-env check-sources
+	./scripts/m7b-build.sh
+
+m7b-smoke:
+	./scripts/m7b-smoke.sh
