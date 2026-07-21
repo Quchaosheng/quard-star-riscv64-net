@@ -124,6 +124,7 @@ void trap_return()
 {
 	TrapContext *cx = (TrapContext *)(uintptr_t)get_current_trap_cx();
 	cx->kernel_tp = (reg_t)(uintptr_t)cpu_this();
+	intr_off();
 	set_user_trap_entry();
 	u64 trap_cx_ptr = TRAPFRAME;
 	u64 user_satp = current_user_token();

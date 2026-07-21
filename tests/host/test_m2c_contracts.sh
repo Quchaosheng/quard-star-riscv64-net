@@ -83,6 +83,9 @@ require_text scripts/m2c-stress.sh \
   'QS_ALLOC_ITERATIONS=50000' 'two stress workers must total 100000 page loops'
 require_text scripts/m2c-stress.sh \
   'QS_STRESS_MIN_TICKS=1200000000ULL' 'stress must run for at least 120 seconds'
+require_text kernel/src/selftest.c \
+  'printk("QS:STRESS_ELAPSED_TICKS:%ld\n", (long)elapsed);' \
+  'stress elapsed time must not overflow a 32-bit marker'
 
 if [ "$status" -ne 0 ]; then
   exit "$status"
