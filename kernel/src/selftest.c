@@ -70,6 +70,7 @@ static u32 m6c2_close_claimed;
 static u32 m7a_dns_complete;
 static u32 m7b_http_complete;
 static u32 m7c_ntp_complete;
+static u32 m7d_tftp_complete;
 #ifdef QS_M6C2_STRESS
 static u32 m6c2_stress_accepted;
 static u32 m6c2_stress_echoed;
@@ -282,6 +283,13 @@ void m7c_mark_ntp_complete(void)
 #endif
 }
 
+void m7d_mark_tftp_complete(void)
+{
+#ifdef QS_M7D_TEST
+    __atomic_store_n(&m7d_tftp_complete, 1, __ATOMIC_RELEASE);
+#endif
+}
+
 static void m6c2_publish_close(void)
 {
 #ifdef QS_M6C2_TEST
@@ -352,6 +360,10 @@ void m2c_selftest_poll(void)
     if (!__atomic_load_n(&m7c_ntp_complete, __ATOMIC_ACQUIRE))
         return;
 #endif
+#ifdef QS_M7D_TEST
+    if (!__atomic_load_n(&m7d_tftp_complete, __ATOMIC_ACQUIRE))
+        return;
+#endif
     if ((__atomic_load_n(&completed, __ATOMIC_ACQUIRE) & required) != required)
         return;
     if (!m6c2_stress_ready())
@@ -364,7 +376,9 @@ void m2c_selftest_poll(void)
         return;
 
     printk("QS:STRESS_ELAPSED_TICKS:%ld\n", (long)elapsed);
-#ifdef QS_M7C_TEST
+#ifdef QS_M7D_TEST
+    printk("QS:TEST_PASS:m7d-smoke\n");
+#elif defined(QS_M7C_TEST)
     printk("QS:TEST_PASS:m7c-smoke\n");
 #elif defined(QS_M7B_TEST)
     printk("QS:TEST_PASS:m7b-smoke\n");
