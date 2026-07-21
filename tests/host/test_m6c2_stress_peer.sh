@@ -136,13 +136,17 @@ def stress_parts(index):
         segment(guest_end, host_end + 1, peer.TCP_FLAG_ACK),
         segment(guest_end, host_end + 1,
                 peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK),
+        segment(guest_end + 1, host_end + 1, peer.TCP_FLAG_ACK),
     ]
     return exchange, close
 
 
 def stress_flow(connection_count=108, duplicate_first_fin=False,
                 duplicate_first_syn_ack=False,
-                duplicate_first_echo=False):
+                duplicate_first_echo=False,
+                duplicate_first_data_ack=False,
+                duplicate_first_echo_during_close=False,
+                duplicate_first_final_ack=False):
     exchanges = []
     closes = []
     parallel = min(connection_count, peer.STRESS_PARALLEL)
@@ -151,16 +155,23 @@ def stress_flow(connection_count=108, duplicate_first_fin=False,
         exchanges.append(exchange[0])
         if index == 0 and duplicate_first_syn_ack:
             exchanges.append(exchange[0])
-        exchanges.extend(exchange[1:])
+        exchanges.append(exchange[1])
+        if index == 0 and duplicate_first_data_ack:
+            exchanges.append(exchange[1])
+        exchanges.append(exchange[2])
         if index == 0 and duplicate_first_echo:
             exchanges.append(exchange[2])
-        closes.extend(close)
+        if index == 0 and duplicate_first_echo_during_close:
+            closes.append(exchange[2])
+        closes.extend(close[:2])
         if index == 0 and duplicate_first_fin:
-            closes.append(close[-1])
+            closes.append(close[1])
+        if index == 0 and duplicate_first_final_ack:
+            closes.append(close[2])
     frames = exchanges + closes
     for index in range(peer.STRESS_PARALLEL, connection_count):
         exchange, close = stress_parts(index)
-        frames.extend(exchange + close)
+        frames.extend(exchange + close[:2])
     return frames
 
 
@@ -223,6 +234,27 @@ result, _, stats = run(stress_flow(duplicate_first_echo=True))
 assert result == 0
 assert stats["tcp_server_stress_echo"] == 108
 
+result, _, stats = run(stress_flow(duplicate_first_data_ack=True))
+assert result == 0
+assert stats["tcp_server_stress_echo"] == 108
+
+result, sent, stats = run(
+    stress_flow(duplicate_first_echo_during_close=True))
+assert result == 0
+assert stats["tcp_server_stress_fin"] == 108
+first_fins = [
+    segment for frame in sent
+    if (segment := peer.decode_tcp(frame)) is not None and
+    segment["src_port"] == peer.HOST_TCP_SERVER_PORT and
+    segment["flags"] == (peer.TCP_FLAG_FIN | peer.TCP_FLAG_ACK)
+]
+assert len(first_fins) >= 2
+assert first_fins[0] == first_fins[1]
+
+result, _, stats = run(stress_flow(duplicate_first_final_ack=True))
+assert result == 0
+assert stats["tcp_server_stress_fin"] == 108
+
 
 def rejected(frames):
     try:
@@ -247,6 +279,31 @@ wrong_payload[2] = peer.encode_tcp(
     segment["src_port"], segment["dst_port"], segment["seq"],
     segment["ack"], segment["flags"], b"m6c2-999")
 rejected(wrong_payload)
+
+wrong_echo_ack = stress_flow()
+segment = peer.decode_tcp(wrong_echo_ack[2])
+wrong_echo_ack[2] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], segment["dst_port"], segment["seq"] + 1,
+    segment["ack"], peer.TCP_FLAG_ACK)
+rejected(wrong_echo_ack)
+
+wrong_closing_echo = stress_flow(duplicate_first_echo_during_close=True)
+segment = peer.decode_tcp(wrong_closing_echo[peer.STRESS_PARALLEL * 3])
+wrong_closing_echo[peer.STRESS_PARALLEL * 3] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], segment["dst_port"], segment["seq"],
+    segment["ack"] + 1, segment["flags"], segment["payload"])
+rejected(wrong_closing_echo)
+
+wrong_complete_ack = stress_flow(duplicate_first_final_ack=True)
+complete_index = peer.STRESS_PARALLEL * 3 + 2
+segment = peer.decode_tcp(wrong_complete_ack[complete_index])
+wrong_complete_ack[complete_index] = peer.encode_tcp(
+    peer.GUEST_MAC, peer.HOST_MAC, peer.GUEST_IP, peer.HOST_IP,
+    segment["src_port"], segment["dst_port"], segment["seq"] + 1,
+    segment["ack"], segment["flags"])
+rejected(wrong_complete_ack)
 
 cross_tuple = stress_flow()
 segment = peer.decode_tcp(cross_tuple[4])
