@@ -21,4 +21,7 @@ fi
 if [ "${QS_M6C2_STRESS:-0}" = 1 ]; then
   export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M6C2_STRESS"
 fi
+if [ "${QS_M7A_TEST:-0}" = 1 ]; then
+  export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M7A_TEST"
+fi
 exec "$root/scripts/m6a-build.sh"

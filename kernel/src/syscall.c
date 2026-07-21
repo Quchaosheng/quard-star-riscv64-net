@@ -5,6 +5,7 @@
 #define SOCKET_IO_MAX 1472
 
 #include <timeros/net/net_exec.h>
+#include <timeros/net/dns.h>
 #include <timeros/net/net_stack.h>
 #include <timeros/net/socket.h>
 #include <timeros/net/tools.h>
@@ -480,6 +481,31 @@ static int __sys_close(int handle)
     return result < 0 ? result : wait_result;
 }
 
+static int __sys_dns_resolve(const char *user_name, u32 *user_address)
+{
+    char name[MAX_USER_STR];
+    if (copy_user_cstr(name, sizeof(name), user_name) < 0 ||
+        user_range_check((const char *)user_address, sizeof(u32), PTE_W) < 0)
+        return NET_ERR_PARAM;
+
+    ipaddr_t server;
+    ipaddr_t address;
+    if (ipaddr_from_str(&server, "192.168.100.1") < 0)
+        return NET_ERR_PARAM;
+    net_err_t error = dns_resolve_a(net_stack_default(), &server, 53,
+                                    name, &address, 2000);
+    if (error < 0 || copy_to_user((char *)user_address, &address.q_addr,
+                                  sizeof(address.q_addr)) < 0)
+        return error < 0 ? error : NET_ERR_PARAM;
+    return NET_ERR_OK;
+}
+
+static int __sys_dns_complete(void)
+{
+    m7a_mark_dns_complete();
+    return NET_ERR_OK;
+}
+
 reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 {
 	switch (syscall_id) {
@@ -521,6 +547,10 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 		return __sys_recvfrom((int)arg1, (const net_recvfrom_args *)arg2);
 	case __NR_close:
 		return __sys_close((int)arg1);
+	case __NR_dns_resolve:
+		return __sys_dns_resolve((const char *)arg1, (u32 *)arg2);
+	case __NR_dns_complete:
+		return __sys_dns_complete();
 	default:
 		printk("unsupported syscall id:%d\n", syscall_id);
 		return -1;
