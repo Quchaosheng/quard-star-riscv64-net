@@ -36,7 +36,7 @@ Declare:
 ```c
 typedef struct {
     u16 id;
-    u8 bytes[256];
+    u8 bytes[512];
     int length;
 } dns_query_t;
 
