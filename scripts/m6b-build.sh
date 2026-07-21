@@ -30,4 +30,7 @@ fi
 if [ "${QS_M7C_TEST:-0}" = 1 ]; then
   export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M7C_TEST"
 fi
+if [ "${QS_M7D_TEST:-0}" = 1 ]; then
+  export QS_KERNEL_CPPFLAGS="$QS_KERNEL_CPPFLAGS -DQS_M7D_TEST"
+fi
 exec "$root/scripts/m6a-build.sh"

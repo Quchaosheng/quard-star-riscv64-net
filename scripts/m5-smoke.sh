@@ -20,7 +20,7 @@ if [ "$test_name" != m5-smoke ] && [ "$test_name" != m6a-smoke ] && \
   [ "$test_name" != m6b-smoke ] && [ "$test_name" != m6c1-smoke ] && \
   [ "$test_name" != m6c2-smoke ] && [ "$test_name" != m6c2-stress ] && \
   [ "$test_name" != m7a-smoke ] && [ "$test_name" != m7b-smoke ] && \
-  [ "$test_name" != m7c-smoke ]; then
+  [ "$test_name" != m7c-smoke ] && [ "$test_name" != m7d-smoke ]; then
   echo "error: unsupported M5 test name $test_name" >&2
   exit 1
 fi
@@ -67,6 +67,8 @@ elif [ "$test_name" = m7b-smoke ]; then
   set -- "$@" --require-dns --require-http
 elif [ "$test_name" = m7c-smoke ]; then
   set -- "$@" --require-dns --require-http --require-ntp
+elif [ "$test_name" = m7d-smoke ]; then
+  set -- "$@" --require-dns --require-http --require-ntp --require-tftp
 fi
 peer_needs_sudo=0
 if [ "${QS_FORCE_PEER_SUDO:-0}" = 1 ]; then
@@ -111,13 +113,14 @@ extra_m6_markers=
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
   [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
   [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ] || \
-  [ "$test_name" = m7b-smoke ] || [ "$test_name" = m7c-smoke ]; then
+  [ "$test_name" = m7b-smoke ] || [ "$test_name" = m7c-smoke ] || \
+  [ "$test_name" = m7d-smoke ]; then
   extra_m6_markers='QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK'
 fi
 if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
   [ "$test_name" = m6c2-smoke ] || [ "$test_name" = m6c2-stress ] || \
   [ "$test_name" = m7a-smoke ] || [ "$test_name" = m7b-smoke ] || \
-  [ "$test_name" = m7c-smoke ]; then
+  [ "$test_name" = m7c-smoke ] || [ "$test_name" = m7d-smoke ]; then
   extra_m6_markers="$extra_m6_markers QS:M6B_UDP_OK QS:M6B_UDP_TIMEOUT_OK"
 fi
 if [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
@@ -137,6 +140,8 @@ elif [ "$test_name" = m7b-smoke ]; then
   extra_m7_markers='QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK'
 elif [ "$test_name" = m7c-smoke ]; then
   extra_m7_markers='QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK QS:M7C_NTP_QUERY_OK QS:M7C_NTP_RESPONSE_OK QS:M7C_NTP_TIMEOUT_OK'
+elif [ "$test_name" = m7d-smoke ]; then
+  extra_m7_markers='QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK QS:M7C_NTP_QUERY_OK QS:M7C_NTP_RESPONSE_OK QS:M7C_NTP_TIMEOUT_OK QS:M7D_TFTP_RRQ_OK QS:M7D_TFTP_DATA1_OK QS:M7D_TFTP_DATA2_OK QS:M7D_TFTP_CHECKSUM_OK QS:M7D_TFTP_TIMEOUT_OK'
 fi
 export QS_EXTRA_MARKERS="QS:VIRTQUEUE_OK QS:BLOCK_IRQ_OK QS:BLOCK_STRESS_OK QS:FATFS_OK QS:NET_LINK_OK QS:NET_IRQ_OK QS:NET_TX_OK QS:NET_RX_OK QS:NET_RESET_OK QS:NET_RESETS:1 QS:NET_STRESS_FRAMES:$raw_count QS:M5_ARP_OK QS:M5_PING_OK $extra_m6_markers $extra_m7_markers QS:TEST_PASS:$test_name"
 export QS_SMOKE_TIMEOUT=${QS_SMOKE_TIMEOUT:-60}
@@ -166,7 +171,8 @@ fi
 if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
   [ "$test_name" = m6c1-smoke ] || [ "$test_name" = m6c2-smoke ] || \
   [ "$test_name" = m6c2-stress ] || [ "$test_name" = m7a-smoke ] || \
-  [ "$test_name" = m7b-smoke ] || [ "$test_name" = m7c-smoke ]; then
+  [ "$test_name" = m7b-smoke ] || [ "$test_name" = m7c-smoke ] || \
+  [ "$test_name" = m7d-smoke ]; then
   markers="QS:M6_QUEUE_OK QS:M6_ARP_TIMER_OK QS:M6_LOOP_OK QS:TEST_PASS:$test_name"
   if [ "$test_name" = m6b-smoke ] || [ "$test_name" = m6c1-smoke ] || \
     [ "$test_name" = m6c2-smoke ] || [ "$test_name" = m6c2-stress ] || \
@@ -190,6 +196,8 @@ if [ "$test_name" = m6a-smoke ] || [ "$test_name" = m6b-smoke ] || \
     markers="$markers QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK"
   elif [ "$test_name" = m7c-smoke ]; then
     markers="$markers QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK QS:M7C_NTP_QUERY_OK QS:M7C_NTP_RESPONSE_OK QS:M7C_NTP_TIMEOUT_OK"
+  elif [ "$test_name" = m7d-smoke ]; then
+    markers="$markers QS:M7A_DNS_QUERY_OK QS:M7A_DNS_RESOLVE_OK QS:M7A_DNS_TIMEOUT_OK QS:M7B_HTTP_DNS_OK QS:M7B_HTTP_CONNECT_OK QS:M7B_HTTP_RESPONSE_OK QS:M7B_HTTP_CLOSE_OK QS:M7C_NTP_QUERY_OK QS:M7C_NTP_RESPONSE_OK QS:M7C_NTP_TIMEOUT_OK QS:M7D_TFTP_RRQ_OK QS:M7D_TFTP_DATA1_OK QS:M7D_TFTP_DATA2_OK QS:M7D_TFTP_CHECKSUM_OK QS:M7D_TFTP_TIMEOUT_OK"
   fi
   for marker in $markers; do
     count=$(tr -d '\000\r' < "$out/qemu.log" | grep -Fxc "$marker" || true)
@@ -265,15 +273,22 @@ required = (
         data.get("udp_requests", 0) >= 1 and
         data.get("udp_replies", 0) >= 1
     )) and
-    (sys.argv[3] not in ("m7a-smoke", "m7b-smoke", "m7c-smoke") or (
+    (sys.argv[3] not in ("m7a-smoke", "m7b-smoke", "m7c-smoke", "m7d-smoke") or (
         data.get("dns_queries", 0) >= 2 and
         data.get("dns_replies", 0) >= 1 and
         data.get("dns_timeouts", 0) >= 1
     )) and
-    (sys.argv[3] not in ("m7b-smoke", "m7c-smoke") or (
+    (sys.argv[3] not in ("m7b-smoke", "m7c-smoke", "m7d-smoke") or (
         data.get("http_requests", 0) >= 1 and
         data.get("http_responses", 0) >= 1 and
         data.get("http_outstanding", -1) == 0
+    )) and
+    (sys.argv[3] != "m7d-smoke" or (
+        data.get("tftp_rrq", 0) >= 1 and
+        data.get("tftp_data", 0) >= 2 and
+        data.get("tftp_acks", 0) >= 2 and
+        data.get("tftp_timeouts", 0) >= 1 and
+        data.get("tftp_outstanding", -1) == 0
     )) and
     (sys.argv[3] != "m7c-smoke" or (
         data.get("ntp_queries", 0) >= 2 and
@@ -326,6 +341,8 @@ elif [ "$test_name" = m7b-smoke ]; then
   echo "PASS: $test_name TAP DNS/HTTP acceptance"
 elif [ "$test_name" = m7c-smoke ]; then
   echo "PASS: $test_name TAP DNS/HTTP/NTP acceptance"
+elif [ "$test_name" = m7d-smoke ]; then
+  echo "PASS: $test_name TAP DNS/HTTP/NTP/TFTP acceptance"
 else
   echo "PASS: $test_name TAP ARP/ICMP acceptance"
 fi

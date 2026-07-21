@@ -509,6 +509,9 @@ static int __sys_dns_complete(void)
 #ifdef QS_M7C_TEST
     m7c_mark_ntp_complete();
 #endif
+#ifdef QS_M7D_TEST
+    m7d_mark_tftp_complete();
+#endif
     return NET_ERR_OK;
 }
 
