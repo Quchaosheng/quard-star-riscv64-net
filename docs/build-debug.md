@@ -38,7 +38,7 @@ M8 output is stored under `out/m8`:
 - `qemu.err`: QEMU diagnostics.
 - `m5-peer.stats`: observed TAP exchange counters.
 
-Successful runs contain `QS:TEST_PASS:m8-smoke` in `kernel.log` and `QS:TRUSTED_READY` in `trusted.log`. A `QS:TEST_FAIL` marker takes precedence over later output.
+Successful runs contain `QS:TEST_PASS:m8-smoke` and `QS:PMP_UNTRUSTED_DENY_OK` in `kernel.log`. `trusted.log` must contain `QS:TRUSTED_READY`, `QS:TRUSTED_SCHED_OK`, and `QS:PMP_TRUSTED_DENY_OK`. A `QS:TEST_FAIL` marker takes precedence over later output.
 
 ## Kernel Debugging
 
