@@ -2,6 +2,7 @@
 
 &udomain {
 	possible-harts = <&cpu0 &cpu1 &cpu2 &cpu3 &cpu4 &cpu5 &cpu6>;
+	regions = <&trusted_mem 0x0>, <&trusted_uart 0x0>, <&allmem 0x7>;
 };
 
 / {
@@ -10,7 +11,7 @@
 			tdomain: trusted-domain {
 				compatible = "opensbi,domain,instance";
 				possible-harts = <&cpu7>;
-				regions = <&allmem 0x7>;
+				regions = <&trusted_mem 0x7>, <&trusted_uart 0x3>;
 				boot-hart = <&cpu7>;
 				next-arg1 = <0 0>;
 				next-addr = <0 0xbf800000>;
