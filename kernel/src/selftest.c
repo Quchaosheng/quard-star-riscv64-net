@@ -400,6 +400,8 @@ void m2c_selftest_poll(void)
     printk("QS:TEST_PASS:m7c-smoke\n");
 #elif defined(QS_M7B_TEST)
     printk("QS:TEST_PASS:m7b-smoke\n");
+#elif defined(QS_M8_TEST)
+    printk("QS:TEST_PASS:m8-smoke\n");
 #elif defined(QS_M7A_TEST)
     printk("QS:TEST_PASS:m7a-smoke\n");
 #elif defined(QS_M6B_TEST)

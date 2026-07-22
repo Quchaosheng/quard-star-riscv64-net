@@ -1,0 +1,45 @@
+/include/ "quard_star_sbi.dts"
+
+&udomain {
+	possible-harts = <&cpu0 &cpu1 &cpu2 &cpu3 &cpu4 &cpu5 &cpu6>;
+};
+
+/ {
+	chosen {
+		opensbi-domains {
+			tdomain: trusted-domain {
+				compatible = "opensbi,domain,instance";
+				possible-harts = <&cpu7>;
+				regions = <&allmem 0x7>;
+				boot-hart = <&cpu7>;
+				next-arg1 = <0 0>;
+				next-addr = <0 0xbf800000>;
+				next-mode = <1>;
+			};
+		};
+	};
+
+	cpus {
+		cpu1: cpu@1 { device_type = "cpu"; reg = <1>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu1_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu2: cpu@2 { device_type = "cpu"; reg = <2>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu2_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu3: cpu@3 { device_type = "cpu"; reg = <3>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu3_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu4: cpu@4 { device_type = "cpu"; reg = <4>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu4_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu5: cpu@5 { device_type = "cpu"; reg = <5>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu5_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu6: cpu@6 { device_type = "cpu"; reg = <6>; status = "okay"; compatible = "riscv"; opensbi-domain = <&udomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu6_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+		cpu7: cpu@7 { device_type = "cpu"; reg = <7>; status = "okay"; compatible = "riscv"; opensbi-domain = <&tdomain>; riscv,isa = "rv64imafdcsu"; mmu-type = "riscv,sv39"; cpu7_intc: interrupt-controller { #address-cells = <0>; #interrupt-cells = <1>; interrupt-controller; compatible = "riscv,cpu-intc"; }; };
+	};
+};
+
+&plic {
+	interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9 &cpu1_intc 11 &cpu1_intc 9
+			       &cpu2_intc 11 &cpu2_intc 9 &cpu3_intc 11 &cpu3_intc 9
+			       &cpu4_intc 11 &cpu4_intc 9 &cpu5_intc 11 &cpu5_intc 9
+			       &cpu6_intc 11 &cpu6_intc 9 &cpu7_intc 11 &cpu7_intc 9>;
+};
+
+&{/soc/clint@2000000} {
+	interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7 &cpu1_intc 3 &cpu1_intc 7
+			       &cpu2_intc 3 &cpu2_intc 7 &cpu3_intc 3 &cpu3_intc 7
+			       &cpu4_intc 3 &cpu4_intc 7 &cpu5_intc 3 &cpu5_intc 7
+			       &cpu6_intc 3 &cpu6_intc 7 &cpu7_intc 3 &cpu7_intc 7>;
+};
