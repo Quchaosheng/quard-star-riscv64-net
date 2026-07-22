@@ -55,8 +55,8 @@ OBJ_DIR = $(BUILD_DIR)/obj
 # C sources
 C_SOURCES =  \
 		${wildcard $(FREERTOS_DIR)/*.c} \
-		${wildcard $(FREERTOS_DIR)/portable/GCC/RISC-V/*.c} \
 		${wildcard $(FREERTOS_DIR)/portable/MemMang/heap_4.c} \
+		${wildcard $(TOP_DIR)/port/*.c} \
 		${wildcard $(TOP_DIR)/driver/*.c} \
 		${wildcard $(TOP_DIR)/riscv/*.c} \
 		${wildcard $(TOP_DIR)/*.c}
@@ -64,7 +64,7 @@ C_SOURCES =  \
 # ASM sources
 ASM_SOURCES =  \
 		${wildcard $(TOP_DIR)/*.S} \
-		${wildcard $(FREERTOS_DIR)/portable/GCC/RISC-V/*.S}
+		${wildcard $(TOP_DIR)/port/*.S}
 
 ######################################
 # firmware library
@@ -75,7 +75,7 @@ PERIFLIB_SOURCES =
 #######################################
 # CFLAGS
 #######################################
-MCU = -march=rv64imafd_zicsr_zifencei -mabi=lp64d -mcmodel=medany -msmall-data-limit=8 -fmessage-length=0 -fsigned-char
+MCU = -march=rv64ima_zicsr_zifencei -mabi=lp64 -mcmodel=medany -msmall-data-limit=8 -fmessage-length=0 -fsigned-char
 
 # macros for gcc
 # AS defines
@@ -86,7 +86,7 @@ C_DEFS =
 
 # AS includes
 AS_INCLUDES = \
-		-I $(FREERTOS_DIR)/portable/GCC/RISC-V/chip_specific_extensions/RISCV_MTIME_CLINT_no_extensions \
+		-I $(TOP_DIR)/port \
 		-I $(TOP_DIR)/riscv \
 		-I $(TOP_DIR)/driver
 
@@ -94,6 +94,7 @@ AS_INCLUDES = \
 C_INCLUDES = \
 		-I $(TOP_DIR)/include \
 		-I $(FREERTOS_DIR)/include \
+		-I $(TOP_DIR)/port \
 		-I $(FREERTOS_DIR)/portable/GCC/RISC-V \
 		-I $(TOP_DIR)/riscv \
 		-I $(TOP_DIR)/driver \

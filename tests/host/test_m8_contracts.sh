@@ -7,7 +7,7 @@ m8_dts=$root/platform/quard-star/dts/quard_star_sbi_m8.dts
 trusted_makefile=$root/trusted/Makefile
 trusted_config=$root/trusted/FreeRTOSConfig.h
 
-for port_file in port.c portASM.S portmacro.h \
+for port_file in port.c portASM.S portContext.h portmacro.h \
   freertos_risc_v_chip_specific_extensions.h; do
   test -f "$root/trusted/port/$port_file"
 done
@@ -22,8 +22,8 @@ grep -Fq 'sbi_set_timer' "$root/trusted/port/port.c"
 grep -Fq 'scause' "$root/trusted/port/portASM.S"
 grep -Fq 'sepc' "$root/trusted/port/portASM.S"
 grep -Fq 'sstatus' "$root/trusted/port/portASM.S"
-if grep -Eq '\b(mcause|mepc|mstatus|mtvec|mie)\b' \
-    "$root/trusted/port/port.c" "$root/trusted/port/portASM.S"; then
+if grep -Eq '\b(mcause|mepc|mstatus|mtvec|mie|mhartid)\b' \
+    "$root"/trusted/port/*; then
   echo 'FAIL: trusted port still uses machine-mode CSRs' >&2
   exit 1
 fi
