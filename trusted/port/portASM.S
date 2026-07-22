@@ -200,7 +200,8 @@ xPortStartFirstTask:
     load_x  sp, pxCurrentTCB            /* Load pxCurrentTCB. */
     load_x  sp, 0( sp )                 /* Read sp from first TCB member. */
 
-    load_x  x1, 0( sp ) /* Note for starting the scheduler the exception return address is used as the function return address. */
+    load_x  x5, 0( sp )
+    csrw    sepc, x5
 
     portasmRESTORE_ADDITIONAL_REGISTERS /* Defined in freertos_risc_v_chip_specific_extensions.h to restore any registers unique to the RISC-V implementation. */
 
@@ -237,14 +238,14 @@ xPortStartFirstTask:
     store_x x5, 0( x6 )                     /* Restore the critical nesting value for this task. */
 
     load_x  x5, portMSTATUS_OFFSET * portWORD_SIZE( sp )    /* Initial sstatus into x5 (t0). */
-    addi    x5, x5, 0x02                    /* Enable supervisor interrupts for the first task. */
-    csrrw   x0, sstatus, x5                 /* Interrupts enabled from here! */
+    csrw    sstatus, x5
 
+    load_x  x1, 1 * portWORD_SIZE( sp )
     load_x  x5, 2 * portWORD_SIZE( sp )     /* Initial x5 (t0) value. */
     load_x  x6, 3 * portWORD_SIZE( sp )     /* Initial x6 (t1) value. */
 
     addi    sp, sp, portCONTEXT_SIZE
-    ret
+    sret
 /*-----------------------------------------------------------*/
 
 freertos_risc_v_application_exception_handler:
