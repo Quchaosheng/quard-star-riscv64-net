@@ -30,5 +30,9 @@ fi
 for hart in 0 1 2 3 4 5 6; do
   grep -q "QS:HART_ONLINE:$hart" "$log"
 done
+if grep -q 'QS:HART_ONLINE:7' "$log" 2>/dev/null; then
+  echo 'error: trusted hart7 entered the ordinary kernel' >&2
+  exit 1
+fi
 cat "$log"
 echo 'PASS: m8 seven ordinary harts with trusted hart7'

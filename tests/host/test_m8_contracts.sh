@@ -14,5 +14,6 @@ for hart in 1 2 3 4 5 6; do
 done
 grep -Fq -- '-smp 8' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:TRUSTED_READY' "$root/scripts/m8-smoke.sh"
+grep -Fq 'QS:HART_ONLINE:7' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:TEST_PASS:m8-smoke' "$root/kernel/src/selftest.c"
 echo 'PASS: M8 trusted-domain and seven-hart contracts'
