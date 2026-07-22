@@ -12,6 +12,7 @@ typedef struct {
     u32 generation;
     int used;
     int writable;
+    int owner_pid;
 } file_entry_t;
 
 static file_entry_t files[FILE_MAX];
@@ -68,6 +69,7 @@ void file_init(void)
         files[index].generation = 1;
         files[index].used = 0;
         files[index].writable = 0;
+        files[index].owner_pid = -1;
     }
 }
 
@@ -102,6 +104,7 @@ int file_open(const char *name, int writable)
     }
     files[index].used = 1;
     files[index].writable = writable;
+    files[index].owner_pid = current_proc()->pid;
     int handle = file_handle(index);
     sleeplock_release(&file_lock);
     return handle;
@@ -182,9 +185,30 @@ net_err_t file_close(int handle)
         result = close_result;
     entry->used = 0;
     entry->writable = 0;
+    entry->owner_pid = -1;
     entry->generation++;
     if (entry->generation == 0)
         entry->generation = 1;
     sleeplock_release(&file_lock);
     return result == FR_OK ? NET_ERR_OK : NET_ERR_IO;
+}
+
+void file_close_owner(int pid)
+{
+    sleeplock_acquire(&file_lock);
+    for (int index = 0; index < FILE_MAX; index++) {
+        file_entry_t *entry = &files[index];
+        if (!entry->used || entry->owner_pid != pid)
+            continue;
+        if (entry->writable)
+            f_sync(&entry->file);
+        f_close(&entry->file);
+        entry->used = 0;
+        entry->writable = 0;
+        entry->owner_pid = -1;
+        entry->generation++;
+        if (entry->generation == 0)
+            entry->generation = 1;
+    }
+    sleeplock_release(&file_lock);
 }
