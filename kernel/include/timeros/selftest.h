@@ -38,5 +38,6 @@ void m7a_mark_dns_complete(void);
 void m7b_mark_http_complete(void);
 void m7c_mark_ntp_complete(void);
 void m7d_mark_tftp_complete(void);
+void m7e_mark_file_complete(void);
 
 #endif

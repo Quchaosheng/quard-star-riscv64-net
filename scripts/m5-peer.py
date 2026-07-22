@@ -52,6 +52,7 @@ TEST_SEQUENCE = 1
 HOST_IDENTIFIER = 0x4D36
 HOST_SEQUENCE = 1
 M4_PAYLOAD_SIZE = 32
+TFTP_WINDOW = 4
 
 
 def checksum16(data: bytes) -> int:
@@ -249,9 +250,9 @@ def ntp_response(query: bytes) -> bytes | None:
     return bytes(response)
 
 
-def tftp_data(block: int) -> bytes:
+def tftp_data(block: int, large: bool = False) -> bytes:
     start = (block - 1) * 512
-    size = 512 if block == 1 else 188
+    size = 0 if large and block == 2049 else (512 if large or block == 1 else 188)
     payload = bytes((index & 0xff) for index in range(start, start + size))
     return b"\x00\x03" + struct.pack("!H", block) + payload
 
@@ -595,7 +596,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
              require_tcp_server: bool = False,
              require_tcp_server_stress: bool = False,
              require_dns: bool = False, require_http: bool = False,
-             require_ntp: bool = False, require_tftp: bool = False) -> int:
+             require_ntp: bool = False, require_tftp: bool = False,
+             require_tftp_1m: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -622,6 +624,7 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "tftp_acks": 0,
         "tftp_timeouts": 0,
         "tftp_outstanding": 0,
+        "tftp_bytes": 0,
         "tcp_syn": 0,
         "tcp_data": 0,
         "tcp_retransmissions": 0,
@@ -666,6 +669,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
     http_state = "syn"
     tftp_guest_port = 0
     tftp_state = "rrq"
+    tftp_block = 1
+    tftp_next_block = 1
 
     def complete() -> bool:
         return (
@@ -697,8 +702,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             )) and
             (not require_tftp or (
                 stats["tftp_rrq"] >= 1 and
-                stats["tftp_data"] >= 2 and
-                stats["tftp_acks"] >= 2 and
+                stats["tftp_data"] >= (2049 if require_tftp_1m else 2) and
+                stats["tftp_acks"] >= (2049 if require_tftp_1m else 2) and
                 stats["tftp_timeouts"] >= 1 and
                 stats["tftp_outstanding"] == 0
             )) and
@@ -818,21 +823,47 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     stats["tftp_timeouts"] += 1
                     continue
                 if udp[3] == TFTP_PORT and tftp_state == "rrq":
-                    if udp[4] != b"\x00\x01m7d.bin\x00octet\x00":
+                    expected_rrq = (b"\x00\x01m7e.bin\x00octet\x00"
+                                    if require_tftp_1m else b"\x00\x01m7d.bin\x00octet\x00")
+                    if udp[4] != expected_rrq:
                         raise ValueError("unexpected TFTP RRQ")
                     tftp_guest_port = udp[2]
-                    peer.send(encode_udp(
-                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
-                        TFTP_DATA_PORT, tftp_guest_port, tftp_data(1)))
                     stats["tftp_rrq"] += 1
-                    stats["tftp_data"] += 1
-                    stats["tftp_outstanding"] = 1
-                    tftp_state = "ack1"
+                    send_count = TFTP_WINDOW if require_tftp_1m else 1
+                    for initial_block in range(1, send_count + 1):
+                        payload = tftp_data(initial_block, require_tftp_1m)
+                        peer.send(encode_udp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            TFTP_DATA_PORT, tftp_guest_port, payload))
+                        stats["tftp_data"] += 1
+                        stats["tftp_bytes"] += len(payload) - 4
+                    stats["tftp_outstanding"] = send_count
+                    tftp_next_block = send_count + 1
+                    tftp_state = "data" if require_tftp_1m else "ack1"
                     continue
                 if udp[3] == TFTP_DATA_PORT and udp[2] == tftp_guest_port:
                     if len(udp[4]) != 4 or udp[4][:2] != b"\x00\x04":
                         raise ValueError("unexpected TFTP ACK")
                     block = struct.unpack_from("!H", udp[4], 2)[0]
+                    if require_tftp_1m and tftp_state == "data":
+                        if block != tftp_block:
+                            raise ValueError("unexpected TFTP block")
+                        stats["tftp_acks"] += 1
+                        stats["tftp_outstanding"] -= 1
+                        if block == 2049:
+                            tftp_state = "complete"
+                        else:
+                            tftp_block += 1
+                            if tftp_next_block <= 2049:
+                                payload = tftp_data(tftp_next_block, True)
+                                peer.send(encode_udp(
+                                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                                    TFTP_DATA_PORT, tftp_guest_port, payload))
+                                stats["tftp_data"] += 1
+                                stats["tftp_bytes"] += len(payload) - 4
+                                stats["tftp_outstanding"] += 1
+                                tftp_next_block += 1
+                        continue
                     if tftp_state == "ack1" and block == 1:
                         peer.send(encode_udp(
                             HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
@@ -1265,6 +1296,7 @@ def main() -> int:
     parser.add_argument("--require-http", action="store_true")
     parser.add_argument("--require-ntp", action="store_true")
     parser.add_argument("--require-tftp", action="store_true")
+    parser.add_argument("--require-tftp-1m", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
@@ -1274,7 +1306,9 @@ def main() -> int:
                         args.ready_file, args.stats_file, args.require_udp,
                         args.require_tcp, args.require_tcp_server,
                         args.require_tcp_server_stress, args.require_dns,
-                        args.require_http, args.require_ntp, args.require_tftp)
+                        args.require_http, args.require_ntp,
+                        args.require_tftp or args.require_tftp_1m,
+                        args.require_tftp_1m)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
