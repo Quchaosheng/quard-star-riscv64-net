@@ -25,5 +25,11 @@ grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"
 grep -Fq 'docs/limitations.md' "$root/README.md"
+grep -Fq 'v0.9.0' "$root/README.md"
+grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
 grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"
+if git -C "$root" ls-files '*.pcap' | grep -q .; then
+  echo 'FAIL: generated packet captures must not be tracked' >&2
+  exit 1
+fi
 echo 'PASS: M9 host CI and README contracts'

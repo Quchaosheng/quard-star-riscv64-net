@@ -8,6 +8,12 @@ First-party migration baselines are recorded in [docs/source-migration.md](docs/
 
 Build and debugging commands are documented in [docs/build-debug.md](docs/build-debug.md). Current security and protocol boundaries are listed in [docs/limitations.md](docs/limitations.md).
 
+## Release status
+
+The current release line is `v0.9.0`. Host CI and the M8 QEMU/TAP acceptance test cover the implemented eight-hart, storage, and network paths described below.
+
+`v1.0.0` remains blocked on PMP-enforced memory isolation between the OpenSBI domains. The current domain configuration proves hart ownership and independent startup, but both domains still use `allmem`; see [docs/limitations.md](docs/limitations.md).
+
 ## Verification
 
 Run host tests on Ubuntu 24.04 or 26.04:
