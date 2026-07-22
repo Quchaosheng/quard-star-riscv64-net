@@ -73,7 +73,7 @@ int tftp_data_parse(const unsigned char *packet, int length,
 
 int tftp_ack_encode(unsigned char *packet, int capacity, uint16_t block)
 {
-    if (packet == 0 || capacity < 4 || block == 0)
+    if (packet == 0 || capacity < 4)
         return NET_ERR_PARAM;
     packet[0] = 0;
     packet[1] = 4;
