@@ -65,6 +65,13 @@ grep -Fq '#define EXC_INST_ACCESS  1' "$root/kernel/include/timeros/riscv.h"
 grep -Fq '#define EXC_LOAD_ACCESS  5' "$root/kernel/include/timeros/riscv.h"
 grep -Fq '#define EXC_STORE_ACCESS 7' "$root/kernel/include/timeros/riscv.h"
 grep -Fq 'PTE_R | PTE_W | PTE_X' "$root/kernel/src/address.c"
+for access in LOAD STORE EXEC; do
+  grep -Fq "QS:PMP_TRUSTED_${access}_DENY_OK" "$root/trusted/main.c"
+done
+grep -Fq 'QS:PMP_TRUSTED_${access}_DENY_OK' "$root/scripts/m8-smoke.sh"
+grep -Fq 'uintptr_t *saved_pc' "$root/trusted/main.c"
+grep -Fq 'addi a1, sp, 0' "$root/trusted/port/portASM.S"
+grep -Fq 'addi a1, sp, 0' "$root/trusted/port/portContext.h"
 grep -Fq 'QS:HART_ONLINE:7' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS_M9_PMP_TEST' "$root/scripts/m8-build.sh"
 grep -Fq 'QS_M7E_TEST' "$root/scripts/m8-build.sh"
