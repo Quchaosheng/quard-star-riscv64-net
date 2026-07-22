@@ -51,12 +51,47 @@ int main(void)
     printf("QS:M7E_TFTP_RRQ_OK\n");
     sha256_init(&hash);
     for (int block = 1; block <= 2049; block++) {
-        int received = sys_recvfrom(netfd, packet, sizeof(packet), 0, &source,
-                                    &source_length, 5000);
+        int received;
         int data_length;
-        if (received < 0 || source.address != server.address || source.port == 0 ||
-            tftp_data_parse(packet, received, (uint16_t)block, &data, &data_length) < 0)
-            return fail(netfd, filefd, "data");
+        int retries = 0;
+        for (;;) {
+            received = sys_recvfrom(netfd, packet, sizeof(packet), 0,
+                                    &source, &source_length, 3000);
+            if (received == -4) {
+                if (retries++ == 3)
+                    return fail(netfd, filefd, "timeout");
+                if (block == 1) {
+                    if (sys_sendto(netfd, rrq, (size_t)rrq_length, 0,
+                                   &server, sizeof(server)) != rrq_length)
+                        return fail(netfd, filefd, "retry-rrq");
+                } else {
+                    if (tftp_ack_encode(ack, sizeof(ack),
+                                        (uint16_t)(block - 1)) < 0 ||
+                        sys_sendto(netfd, ack, sizeof(ack), 0, &source,
+                                   sizeof(source)) != 4)
+                        return fail(netfd, filefd, "retry-ack");
+                }
+                continue;
+            }
+            if (received < 0 || source.address != server.address ||
+                source.port == 0)
+                return fail(netfd, filefd, "data");
+            if (received >= 4 && packet[0] == 0 && packet[1] == 3) {
+                uint16_t received_block = (uint16_t)(((uint16_t)packet[2] << 8) |
+                                                      packet[3]);
+                if (received_block == (uint16_t)(block - 1)) {
+                    if (tftp_ack_encode(ack, sizeof(ack), received_block) < 0 ||
+                        sys_sendto(netfd, ack, sizeof(ack), 0, &source,
+                                   sizeof(source)) != 4)
+                        return fail(netfd, filefd, "duplicate-ack");
+                    continue;
+                }
+            }
+            if (tftp_data_parse(packet, received, (uint16_t)block,
+                                &data, &data_length) < 0)
+                return fail(netfd, filefd, "data");
+            break;
+        }
         if (server_port == 0)
             server_port = source.port;
         else if (source.port != server_port)
