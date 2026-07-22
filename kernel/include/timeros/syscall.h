@@ -26,6 +26,11 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3);
 #define __NR_recv 209
 #define __NR_dns_resolve 210
 #define __NR_dns_complete 211
+#define __NR_file_open 212
+#define __NR_file_read 213
+#define __NR_file_write 214
+#define __NR_file_sync 215
+#define __NR_file_close 216
 #define __NR_close 57
 
 #define NET_AF_INET 2
@@ -94,5 +99,10 @@ int sys_recvfrom(int fd, void *data, size_t length, int flags,
 int sys_close(int fd);
 int sys_dns_resolve(const char *name, uint32_t *address);
 int sys_dns_complete(void);
+int sys_file_open(const char *name, int writable);
+int sys_file_read(int handle, void *data, size_t length);
+int sys_file_write(int handle, const void *data, size_t length);
+int sys_file_sync(int handle);
+int sys_file_close(int handle);
 
 #endif

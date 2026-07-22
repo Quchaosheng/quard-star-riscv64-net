@@ -131,3 +131,28 @@ int sys_dns_complete(void)
 {
     return syscall(__NR_dns_complete, 0, 0, 0);
 }
+
+int sys_file_open(const char *name, int writable)
+{
+    return syscall(__NR_file_open, (reg_t)(uintptr_t)name, writable, 0);
+}
+
+int sys_file_read(int handle, void *data, size_t length)
+{
+    return syscall(__NR_file_read, handle, (reg_t)(uintptr_t)data, length);
+}
+
+int sys_file_write(int handle, const void *data, size_t length)
+{
+    return syscall(__NR_file_write, handle, (reg_t)(uintptr_t)data, length);
+}
+
+int sys_file_sync(int handle)
+{
+    return syscall(__NR_file_sync, handle, 0, 0);
+}
+
+int sys_file_close(int handle)
+{
+    return syscall(__NR_file_close, handle, 0, 0);
+}

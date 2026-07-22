@@ -69,7 +69,7 @@ NET_SRCS_C = \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
-SRCS_C += fatfs_port.c fatfs_test.c
+SRCS_C += fatfs_port.c fatfs_test.c file.c
 INCLUDE += -I$(FATFS_DIR)
 endif
 

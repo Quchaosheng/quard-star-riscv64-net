@@ -316,6 +316,9 @@ void net_stack_worker(void *arg)
             (u64)timer_ms * NET_TIME_TICKS_PER_MS < wait_ticks) {
             wait_ticks = (u64)timer_ms * NET_TIME_TICKS_PER_MS;
         }
-        (void)net_stack_poll_once(netif, net_stack_now() + wait_ticks);
+        net_err_t poll_result = net_stack_poll_once(
+            netif, net_stack_now() + wait_ticks);
+        while (poll_result == NET_ERR_OK)
+            poll_result = net_stack_poll_once(netif, net_stack_now());
     }
 }
