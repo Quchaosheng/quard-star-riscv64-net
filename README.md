@@ -24,6 +24,8 @@ make m8-smoke
 
 The M8 smoke test requires Linux TAP access and verifies harts 0-6, the trusted hart7 UART marker, DNS, HTTP, NTP, and a 1 MiB TFTP transfer. It does not require public network access.
 
+GitHub Actions runs host tests on every push and pull request. The full M8 QEMU/TAP smoke test runs weekly and can also be started manually; its serial logs and peer statistics are uploaded as workflow artifacts.
+
 ## Acknowledgements
 
 The kernel's educational design was inspired by Tsinghua University's open-source rCore project. Thanks to the rCore contributors for making operating-system concepts and implementation techniques accessible to learners. The kernel in this repository is an independent C design and implementation.

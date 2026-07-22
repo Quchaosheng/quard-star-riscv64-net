@@ -1,0 +1,49 @@
+name: m8-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 18 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build and TAP dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential ninja-build meson pkg-config \
+            gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf \
+            device-tree-compiler libfdt-dev python3 \
+            libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
+            flex bison bc iproute2 tcpdump curl
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/quard-star-riscv64-net
+          key: m8-${{ runner.os }}-${{ hashFiles('patches/**', '.gitmodules') }}
+      - name: Fetch FatFs
+        run: ./scripts/fetch-fatfs.sh
+      - name: Build M8 firmware
+        run: make m8-build
+      - name: Run M8 QEMU/TAP smoke
+        run: sudo -E make m8-smoke
+      - name: Upload serial logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m8-serial-logs
+          path: |
+            out/m8/qemu.log
+            out/m8/qemu.err
+            out/m8/kernel.log
+            out/m8/trusted.log
+            out/m8/m5-peer.stats
+          if-no-files-found: ignore
