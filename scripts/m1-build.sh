@@ -17,11 +17,23 @@ prepare_tree() {
   commit=$(git -C "$upstream" rev-parse HEAD)
   patch_id=$(sha256sum "$patch" | cut -c1-12)
   tree=$cache/$name-$commit-$patch_id
+  marker=$tree/.qs-patch-applied
 
-  if [ ! -d "$tree/.git" ]; then
+  if [ ! -f "$marker" ]; then
     mkdir -p "$cache"
-    git -c core.autocrlf=false clone --shared "$upstream" "$tree" >&2
-    git -C "$tree" apply "$patch" >&2
+    staging=$tree.tmp.$$
+    rm -rf "$tree" "$staging"
+    if ! git -c core.autocrlf=false clone --shared "$upstream" \
+        "$staging" >&2; then
+      rm -rf "$staging"
+      return 1
+    fi
+    if ! git -C "$staging" apply "$patch" >&2; then
+      rm -rf "$staging"
+      return 1
+    fi
+    : > "$staging/.qs-patch-applied"
+    mv "$staging" "$tree"
   fi
   printf '%s\n' "$tree"
 }

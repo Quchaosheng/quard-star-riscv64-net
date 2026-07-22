@@ -69,6 +69,36 @@ int sys_bind(int fd, const net_sockaddr_in *address, size_t address_length)
     return syscall(__NR_bind, fd, (reg_t)(uintptr_t)address, address_length);
 }
 
+int sys_listen(int fd, int backlog)
+{
+    return syscall(__NR_listen, fd, backlog, 0);
+}
+
+int sys_accept(int fd, net_sockaddr_in *address, size_t *address_length)
+{
+    return syscall(__NR_accept, fd, (reg_t)(uintptr_t)address,
+                   (reg_t)(uintptr_t)address_length);
+}
+
+int sys_connect(int fd, const net_sockaddr_in *address,
+                size_t address_length)
+{
+    return syscall(__NR_connect, fd, (reg_t)(uintptr_t)address,
+                   address_length);
+}
+
+int sys_send(int fd, const void *data, size_t length, int flags)
+{
+    net_send_args args = { data, length, flags };
+    return syscall(__NR_send, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
+int sys_recv(int fd, void *data, size_t length, int flags)
+{
+    net_recv_args args = { data, length, flags };
+    return syscall(__NR_recv, fd, (reg_t)(uintptr_t)&args, 0);
+}
+
 int sys_sendto(int fd, const void *data, size_t length, int flags,
                const net_sockaddr_in *address, size_t address_length)
 {
@@ -89,4 +119,40 @@ int sys_recvfrom(int fd, void *data, size_t length, int flags,
 int sys_close(int fd)
 {
     return syscall(__NR_close, fd, 0, 0);
+}
+
+int sys_dns_resolve(const char *name, uint32_t *address)
+{
+    return syscall(__NR_dns_resolve, (reg_t)(uintptr_t)name,
+                   (reg_t)(uintptr_t)address, 0);
+}
+
+int sys_dns_complete(void)
+{
+    return syscall(__NR_dns_complete, 0, 0, 0);
+}
+
+int sys_file_open(const char *name, int writable)
+{
+    return syscall(__NR_file_open, (reg_t)(uintptr_t)name, writable, 0);
+}
+
+int sys_file_read(int handle, void *data, size_t length)
+{
+    return syscall(__NR_file_read, handle, (reg_t)(uintptr_t)data, length);
+}
+
+int sys_file_write(int handle, const void *data, size_t length)
+{
+    return syscall(__NR_file_write, handle, (reg_t)(uintptr_t)data, length);
+}
+
+int sys_file_sync(int handle)
+{
+    return syscall(__NR_file_sync, handle, 0, 0);
+}
+
+int sys_file_close(int handle)
+{
+    return syscall(__NR_file_close, handle, 0, 0);
 }

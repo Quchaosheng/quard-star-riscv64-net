@@ -5,6 +5,7 @@
 #define SOCKET_IO_MAX 1472
 
 #include <timeros/net/net_exec.h>
+#include <timeros/net/dns.h>
 #include <timeros/net/net_stack.h>
 #include <timeros/net/socket.h>
 #include <timeros/net/tools.h>
@@ -29,7 +30,10 @@ typedef struct _socket_exec_t {
 enum {
     SOCKET_EXEC_OPEN,
     SOCKET_EXEC_BIND,
+    SOCKET_EXEC_LISTEN,
+    SOCKET_EXEC_CONNECT,
     SOCKET_EXEC_SEND,
+    SOCKET_EXEC_SENDTO,
     SOCKET_EXEC_CLOSE,
 };
 
@@ -40,8 +44,21 @@ static void socket_exec(void *arg)
     if (request->op == SOCKET_EXEC_OPEN)
         request->result = net_socket_open(request->type);
     else if (request->op == SOCKET_EXEC_BIND)
-        request->result = net_socket_bind(request->handle, request->port);
+        request->result = net_socket_bind(request->handle,
+                                          net_stack_default(),
+                                          &request->address,
+                                          request->port);
+    else if (request->op == SOCKET_EXEC_LISTEN)
+        request->result = net_socket_listen(request->handle, request->length);
+    else if (request->op == SOCKET_EXEC_CONNECT)
+        request->result = net_socket_connect_start(request->handle,
+                                                    net_stack_default(),
+                                                    &request->address,
+                                                    request->port);
     else if (request->op == SOCKET_EXEC_SEND)
+        request->result = net_socket_send(request->handle, request->data,
+                                          request->length);
+    else if (request->op == SOCKET_EXEC_SENDTO)
         request->result = net_socket_sendto(request->handle,
                                              net_stack_default(),
                                              &request->address,
@@ -230,13 +247,65 @@ int __sys_wait()
 
 static int __sys_socket(int domain, int type, int protocol)
 {
-    if (domain != NET_AF_INET || type != NET_SOCK_DGRAM || protocol != 0)
+    if (domain != NET_AF_INET || protocol != 0 ||
+        (type != NET_SOCK_DGRAM && type != NET_SOCK_STREAM))
         return NET_ERR_NOT_SUPPORT;
     socket_exec_t request = {
         .op = SOCKET_EXEC_OPEN,
-        .type = NET_SOCKET_UDP,
+        .type = type == NET_SOCK_DGRAM ? NET_SOCKET_UDP : NET_SOCKET_TCP,
     };
     return socket_exec_wait(&request);
+}
+
+static int __sys_connect(int handle,
+                         const net_sockaddr_in *user_address,
+                         size_t address_length)
+{
+    net_sockaddr_in address;
+    if (copy_socket_address(&address, user_address, address_length) < 0)
+        return NET_ERR_PARAM;
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_CONNECT,
+        .handle = handle,
+        .port = x_ntohs(address.port),
+    };
+    request.address.q_addr = address.address;
+    int result = socket_exec_wait(&request);
+    return result < 0 ? result : net_socket_wait_connect(handle, 0);
+}
+
+static int __sys_send(int handle, const net_send_args *user_args)
+{
+    net_send_args args;
+    uint8_t data[TCP_MSS];
+    if (copy_from_user(&args, (const char *)user_args, sizeof(args)) < 0 ||
+        args.flags != 0 || args.length == 0 || args.length > sizeof(data) ||
+        copy_from_user(data, args.data, args.length) < 0)
+        return NET_ERR_PARAM;
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_SEND,
+        .handle = handle,
+        .data = data,
+        .length = (int)args.length,
+    };
+    int result = socket_exec_wait(&request);
+    return result < 0 ? result : (int)args.length;
+}
+
+static int __sys_recv(int handle, const net_recv_args *user_args)
+{
+    net_recv_args args;
+    uint8_t data[TCP_MSS];
+    if (copy_from_user(&args, (const char *)user_args, sizeof(args)) < 0 ||
+        args.flags != 0 || args.length == 0 || args.length > sizeof(data) ||
+        args.data == 0 || user_range_check(args.data, args.length, PTE_W) < 0)
+        return NET_ERR_PARAM;
+    int result = net_socket_recv(handle, data, (int)args.length, 0);
+    if (result < 0)
+        return result;
+    if (copy_to_user(args.data, data, (size_t)result) < 0)
+        return NET_ERR_PARAM;
+    return result;
 }
 
 static int __sys_bind(int handle, const net_sockaddr_in *user_address,
@@ -250,7 +319,63 @@ static int __sys_bind(int handle, const net_sockaddr_in *user_address,
         .handle = handle,
         .port = x_ntohs(address.port),
     };
+    request.address.q_addr = address.address;
     return socket_exec_wait(&request);
+}
+
+static int __sys_listen(int handle, int backlog)
+{
+    socket_exec_t request = {
+        .op = SOCKET_EXEC_LISTEN,
+        .handle = handle,
+        .length = backlog,
+    };
+    return socket_exec_wait(&request);
+}
+
+static int __sys_accept(int handle, net_sockaddr_in *user_address,
+                        size_t *user_address_length)
+{
+    net_socket_accept_t accept = {0};
+    size_t address_length = 0;
+    int output_address = user_address != 0 || user_address_length != 0;
+
+    if ((user_address == 0) != (user_address_length == 0))
+        return NET_ERR_PARAM;
+    if (output_address) {
+        if (copy_from_user(&address_length,
+                           (const char *)user_address_length,
+                           sizeof(address_length)) < 0 ||
+            address_length < sizeof(net_sockaddr_in) ||
+            user_range_check((const char *)user_address,
+                             sizeof(net_sockaddr_in), PTE_W) < 0 ||
+            user_range_check((const char *)user_address_length,
+                             sizeof(address_length), PTE_W) < 0)
+            return NET_ERR_PARAM;
+    }
+
+    int result = net_socket_accept_prepare(handle, &accept);
+    if (result < 0)
+        return result;
+    if (output_address) {
+        net_sockaddr_in address = {
+            .family = NET_AF_INET,
+            .port = x_htons(accept.remote_port),
+            .address = accept.remote_ip.q_addr,
+        };
+        address_length = sizeof(address);
+        if (copy_to_user((char *)user_address, &address,
+                         sizeof(address)) < 0) {
+            net_socket_accept_abort(&accept);
+            return NET_ERR_PARAM;
+        }
+        if (copy_to_user((char *)user_address_length, &address_length,
+                         sizeof(address_length)) < 0) {
+            net_socket_accept_abort(&accept);
+            return NET_ERR_PARAM;
+        }
+    }
+    return net_socket_accept_commit(&accept);
 }
 
 static int __sys_sendto(int handle, const net_sendto_args *user_args)
@@ -265,7 +390,7 @@ static int __sys_sendto(int handle, const net_sendto_args *user_args)
         copy_from_user(data, args.data, args.length) < 0)
         return NET_ERR_PARAM;
     socket_exec_t request = {
-        .op = SOCKET_EXEC_SEND,
+        .op = SOCKET_EXEC_SENDTO,
         .handle = handle,
         .port = x_ntohs(address.port),
         .data = data,
@@ -340,14 +465,89 @@ static int __sys_close(int handle)
         .handle = handle,
     };
     int result = socket_exec_wait(&request);
+    int wait_result = NET_ERR_OK;
+    while (result == NET_ERR_NONE) {
+        int err = net_socket_wait_close(handle, 0);
+        if (err < 0 && wait_result == NET_ERR_OK)
+            wait_result = err;
+        result = socket_exec_wait(&request);
+    }
 #ifdef QS_M6B_TEST
     if (result == NET_ERR_OK && m6b_timeout_handle == handle) {
         m6b_mark_udp_timeout();
         m6b_timeout_handle = -1;
     }
 #endif
+    return result < 0 ? result : NET_ERR_OK;
+}
+
+static int __sys_dns_resolve(const char *user_name, u32 *user_address)
+{
+    char name[MAX_USER_STR];
+    if (copy_user_cstr(name, sizeof(name), user_name) < 0 ||
+        user_range_check((const char *)user_address, sizeof(u32), PTE_W) < 0)
+        return NET_ERR_PARAM;
+
+    ipaddr_t server;
+    ipaddr_t address;
+    if (ipaddr_from_str(&server, "192.168.100.1") < 0)
+        return NET_ERR_PARAM;
+    net_err_t error = dns_resolve_a(net_stack_default(), &server, 53,
+                                    name, &address, 2000);
+    if (error < 0 || copy_to_user((char *)user_address, &address.q_addr,
+                                  sizeof(address.q_addr)) < 0)
+        return error < 0 ? error : NET_ERR_PARAM;
+    return NET_ERR_OK;
+}
+
+static int __sys_dns_complete(void)
+{
+    m7a_mark_dns_complete();
+#ifdef QS_M7B_TEST
+    m7b_mark_http_complete();
+#endif
+#ifdef QS_M7C_TEST
+    m7c_mark_ntp_complete();
+#endif
+#ifdef QS_M7D_TEST
+    m7d_mark_tftp_complete();
+#endif
+#ifdef QS_M7E_TEST
+    m7e_mark_file_complete();
+#endif
+    return NET_ERR_OK;
+}
+
+#ifdef QS_M7E_TEST
+static int __sys_file_open(const char *user_name, int writable)
+{
+    char name[MAX_USER_STR];
+    if (copy_user_cstr(name, sizeof(name), user_name) < 0)
+        return NET_ERR_PARAM;
+    return file_open(name, writable);
+}
+
+static int __sys_file_read(int handle, char *user_data, size_t length)
+{
+    unsigned char buffer[512];
+    if (length == 0 || length > sizeof(buffer) ||
+        user_range_check(user_data, length, PTE_W) < 0)
+        return NET_ERR_PARAM;
+    int result = file_read(handle, buffer, length);
+    if (result < 0 || copy_to_user(user_data, buffer, (size_t)result) < 0)
+        return result < 0 ? result : NET_ERR_PARAM;
     return result;
 }
+
+static int __sys_file_write(int handle, const char *user_data, size_t length)
+{
+    unsigned char buffer[512];
+    if (length == 0 || length > sizeof(buffer) ||
+        copy_from_user(buffer, user_data, length) < 0)
+        return NET_ERR_PARAM;
+    return file_write(handle, buffer, length);
+}
+#endif
 
 reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 {
@@ -373,12 +573,40 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 		return __sys_socket((int)arg1, (int)arg2, (int)arg3);
 	case __NR_bind:
 		return __sys_bind((int)arg1, (const net_sockaddr_in *)arg2, arg3);
+	case __NR_listen:
+		return __sys_listen((int)arg1, (int)arg2);
+	case __NR_accept:
+		return __sys_accept((int)arg1, (net_sockaddr_in *)arg2,
+		                    (size_t *)arg3);
+	case __NR_connect:
+		return __sys_connect((int)arg1, (const net_sockaddr_in *)arg2, arg3);
+	case __NR_send:
+		return __sys_send((int)arg1, (const net_send_args *)arg2);
+	case __NR_recv:
+		return __sys_recv((int)arg1, (const net_recv_args *)arg2);
 	case __NR_sendto:
 		return __sys_sendto((int)arg1, (const net_sendto_args *)arg2);
 	case __NR_recvfrom:
 		return __sys_recvfrom((int)arg1, (const net_recvfrom_args *)arg2);
 	case __NR_close:
 		return __sys_close((int)arg1);
+	case __NR_dns_resolve:
+		return __sys_dns_resolve((const char *)arg1, (u32 *)arg2);
+	case __NR_dns_complete:
+		return __sys_dns_complete();
+#ifdef QS_M7E_TEST
+	case __NR_file_open:
+		return __sys_file_open((const char *)arg1, (int)arg2);
+	case __NR_file_read:
+		return __sys_file_read((int)arg1, (char *)arg2, (size_t)arg3);
+	case __NR_file_write:
+		return __sys_file_write((int)arg1, (const char *)arg2,
+		                        (size_t)arg3);
+	case __NR_file_sync:
+		return file_sync((int)arg1);
+	case __NR_file_close:
+		return file_close((int)arg1);
+#endif
 	default:
 		printk("unsupported syscall id:%d\n", syscall_id);
 		return -1;

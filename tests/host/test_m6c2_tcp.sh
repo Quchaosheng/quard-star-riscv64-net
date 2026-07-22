@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+"$root/tests/host/run_m6c2_tcp_test.sh" \
+  tests/host/test_m6c2_tcp.c \
+  'M6C2 passive TCP state machine' \
+  '-DQS_M6C2_TEST'

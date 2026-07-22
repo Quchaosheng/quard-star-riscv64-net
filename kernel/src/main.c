@@ -110,6 +110,9 @@ void os_main(const void *fdt)
    if (net_stack_init() < 0)
       panic("network stack init");
 #endif
+#ifdef QS_M7E_TEST
+   file_init();
+#endif
    //初始化进程
    procinit();
    //加载initproc进程
