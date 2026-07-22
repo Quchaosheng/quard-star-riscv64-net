@@ -12,10 +12,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: true
       - name: Install host dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential libfdt-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential device-tree-compiler libfdt-dev \
+            gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf
       - name: Run host tests
         run: make test-host
