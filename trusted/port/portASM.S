@@ -90,8 +90,6 @@ definitions. */
 .extern xTaskIncrementTick
 .extern vPortUpdateTimer
 .extern xTaskReturnAddress
-.extern _puts
-.extern trusted_trace_task_context
 
 .weak freertos_risc_v_application_exception_handler
 .weak freertos_risc_v_application_interrupt_handler
@@ -199,13 +197,8 @@ chip_specific_stack_frame:              /* First add any chip specific registers
 /*-----------------------------------------------------------*/
 
 xPortStartFirstTask:
-    la a0, trusted_start_first_marker
-    call _puts
     load_x  sp, pxCurrentTCB            /* Load pxCurrentTCB. */
     load_x  sp, 0( sp )                 /* Read sp from first TCB member. */
-
-    mv a0, sp
-    call trusted_trace_task_context
 
     load_x  x5, 0( sp )
     csrw    sepc, x5
@@ -254,12 +247,6 @@ xPortStartFirstTask:
     addi    sp, sp, portCONTEXT_SIZE
     sret
 /*-----------------------------------------------------------*/
-
-.section .rodata
-trusted_start_first_marker:
-    .asciz "QS:TRUSTED_START_FIRST\n"
-
-.section .text
 
 freertos_risc_v_application_exception_handler:
     csrr t0, scause     /* For viewing in the debugger only. */

@@ -15,6 +15,11 @@
 //物理地址结束地址
 #define PHYSTOP (KERNBASE + 128*1024*1024)
 
+#ifdef QS_M9_PMP_TEST
+#define PMP_TRUSTED_BASE 0xbf800000L
+#define PMP_PROBE_VA     0x40000000L
+#endif
+
 
 // Sv39的最大地址空间 512G
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
