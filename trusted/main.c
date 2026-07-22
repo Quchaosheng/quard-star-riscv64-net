@@ -41,6 +41,7 @@ void freertos_risc_v_application_interrupt_handler(uintptr_t cause)
 static void acceptance_task(void *arg)
 {
     (void)arg;
+    _puts("QS:TRUSTED_FIRST_TASK\n");
     vTaskDelay(pdMS_TO_TICKS(50));
     _puts("QS:TRUSTED_SCHED_OK\n");
     vTaskDelete(NULL);
@@ -90,7 +91,7 @@ void task3(void *p_arg)
 static void vTaskCreate ()
 {
 
-    xTaskCreate(acceptance_task,"accept",512,NULL,2,NULL);
+    xTaskCreate(acceptance_task,"accept",512,NULL,6,NULL);
     xTaskCreate(task1,"task1",1024,NULL,3,NULL);
     xTaskCreate(task2,"task2",1024,NULL,4,NULL);
     xTaskCreate(task3,"task2",1024,NULL,5,NULL);
