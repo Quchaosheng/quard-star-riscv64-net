@@ -77,6 +77,13 @@ int main(void)
             if (received < 0 || source.address != server.address ||
                 source.port == 0)
                 return fail(netfd, filefd, "data");
+            if (received >= 2 && packet[0] == 0 && packet[1] == 6) {
+                if (tftp_ack_encode(ack, sizeof(ack), 0) < 0 ||
+                    sys_sendto(netfd, ack, sizeof(ack), 0, &source,
+                               sizeof(source)) != 4)
+                    return fail(netfd, filefd, "oack");
+                continue;
+            }
             if (received >= 4 && packet[0] == 0 && packet[1] == 3) {
                 uint16_t received_block = (uint16_t)(((uint16_t)packet[2] << 8) |
                                                       packet[3]);

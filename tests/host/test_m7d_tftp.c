@@ -38,6 +38,8 @@ int main(void)
            NET_ERR_FORMAT);
     assert(tftp_ack_encode(packet, sizeof(packet), 2) == 4);
     assert(memcmp(packet, "\0\4\0\2", 4) == 0);
+    assert(tftp_ack_encode(packet, sizeof(packet), 0) == 4);
+    assert(memcmp(packet, "\0\4\0\0", 4) == 0);
     assert(tftp_checksum_update(2166136261U,
                                 (const unsigned char *)"abc", 3) ==
            0x1a47e90bU);
