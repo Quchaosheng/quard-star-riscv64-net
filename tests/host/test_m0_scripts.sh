@@ -21,21 +21,15 @@ ID=ubuntu
 VERSION_ID=26.04
 EOF
 
-for cmd in git make gcc riscv64-unknown-elf-gcc dtc qemu-system-riscv64 ninja meson pkg-config python3 ip tcpdump curl sha256sum; do
+for cmd in git make gcc riscv64-unknown-elf-gcc dtc ninja meson pkg-config python3 ip tcpdump curl sha256sum; do
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/$cmd"
   chmod +x "$tmp/bin/$cmd"
 done
 
 PATH="$tmp/bin:$PATH" \
 QS_OS_RELEASE="$tmp/os-release" \
-"$root/scripts/check-env.sh" || fail "Ubuntu 26.04 with all commands should pass"
-
-mv "$tmp/bin/qemu-system-riscv64" "$tmp/qemu-system-riscv64"
-if PATH="$tmp/bin" QS_OS_RELEASE="$tmp/os-release" /bin/bash "$root/scripts/check-env.sh" >/dev/null 2>"$tmp/qemu.err"; then
-  fail "missing qemu-system-riscv64 should fail"
-fi
-grep -q 'missing: qemu-system-riscv64' "$tmp/qemu.err" || fail "missing-QEMU error should name the command"
-mv "$tmp/qemu-system-riscv64" "$tmp/bin/qemu-system-riscv64"
+"$root/scripts/check-env.sh" || \
+  fail "build environment should not require a preinstalled QEMU"
 
 cat > "$tmp/bin/gcc" <<'EOF'
 #!/bin/sh
