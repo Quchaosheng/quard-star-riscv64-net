@@ -86,6 +86,7 @@ test-host:
 	./tests/host/test_m7d_peer.sh
 	./tests/host/test_m7d_smoke_script.sh
 	./tests/host/test_m7e_sha256.sh
+	./tests/host/test_m7e_file.sh
 	./tests/host/test_m7e_contracts.sh
 	./tests/host/test_m7e_peer.sh
 	./tests/host/test_m7e_smoke_script.sh

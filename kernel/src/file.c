@@ -33,7 +33,8 @@ static file_entry_t *file_find(int handle)
     u32 generation = (u32)handle >> FILE_INDEX_BITS;
     file_entry_t *entry = &files[index];
 
-    if (!entry->used || entry->generation != generation)
+    if (!entry->used || entry->generation != generation ||
+        entry->owner_pid != current_proc()->pid)
         return 0;
     return entry;
 }
@@ -78,7 +79,7 @@ int file_open(const char *name, int writable)
     char path[FILE_PATH_MAX];
     int index = -1;
 
-    if (writable != 0 && writable != 1 ||
+    if ((writable != 0 && writable != 1) ||
         file_path(path, sizeof(path), name) < 0)
         return NET_ERR_PARAM;
     sleeplock_acquire(&file_lock);
@@ -94,10 +95,11 @@ int file_open(const char *name, int writable)
     }
     BYTE mode = writable ? FA_WRITE | FA_CREATE_ALWAYS : FA_READ;
     FRESULT result = f_open(&files[index].file, path, mode);
+    int opened = result == FR_OK;
     if (result == FR_OK && writable)
         result = f_expand(&files[index].file, 1024 * 1024, 1);
     if (result != FR_OK) {
-        if (result != FR_INVALID_OBJECT)
+        if (opened)
             f_close(&files[index].file);
         sleeplock_release(&file_lock);
         return NET_ERR_IO;
