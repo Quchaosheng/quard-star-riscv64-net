@@ -10,9 +10,9 @@ Build and debugging commands are documented in [docs/build-debug.md](docs/build-
 
 ## Release status
 
-The current release line is `v0.9.0`. Host CI and the M8 QEMU/TAP acceptance test cover the implemented eight-hart, storage, and network paths described below.
+The current release line is `v0.9.0`. Host CI and the M8 QEMU/TAP acceptance test cover the implemented eight-hart, storage, network, FreeRTOS scheduling, and domain-isolation paths described below.
 
-`v1.0.0` remains blocked on PMP-enforced memory isolation between the OpenSBI domains. The current domain configuration proves hart ownership and independent startup, but both domains still use `allmem`; see [docs/limitations.md](docs/limitations.md).
+The development branch now has PMP-enforced memory isolation between the OpenSBI domains: hart7 receives an 8 MiB trusted RAM region and UART2, while harts 0-6 are denied both regions. `v1.0.0` is not published; release review remains a separate step after integration. See [docs/limitations.md](docs/limitations.md) for the remaining boundaries.
 
 ## Verification
 
@@ -30,7 +30,7 @@ sudo -v
 make m8-smoke
 ```
 
-The M8 smoke test requires Linux TAP access and verifies harts 0-6, the trusted hart7 UART marker, DNS, HTTP, NTP, and a 1 MiB TFTP transfer. It does not require public network access.
+The M8 smoke test requires Linux TAP access and verifies harts 0-6, the hart7 FreeRTOS scheduler (`QS:TRUSTED_SCHED_OK`), bidirectional PMP denial (`QS:PMP_UNTRUSTED_DENY_OK` and `QS:PMP_TRUSTED_DENY_OK`), DNS, HTTP, NTP, and a 1 MiB TFTP transfer. It does not require public network access.
 
 GitHub Actions runs host tests on every push and pull request. The full M8 QEMU/TAP smoke test runs weekly and can also be started manually; its serial logs and peer statistics are uploaded as workflow artifacts.
 
