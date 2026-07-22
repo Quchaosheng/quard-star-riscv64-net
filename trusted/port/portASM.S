@@ -279,7 +279,7 @@ freertos_risc_v_application_interrupt_handler:
 freertos_risc_v_exception_handler:
     portcontextSAVE_EXCEPTION_CONTEXT
     /* a0 now contains scause. */
-    li t0, 9                            /* 9 == S-mode environment call. */
+    li t0, 3                            /* Breakpoint is the supervisor yield trap. */
     bne a0, t0, other_exception
     call vTaskSwitchContext
     portcontextRESTORE_CONTEXT
@@ -351,7 +351,7 @@ application_interrupt_handler:
 
 handle_exception:
     /* a0 contains scause. */
-    li t0, 9                                    /* S-mode environment call. */
+    li t0, 3                                    /* Breakpoint is the supervisor yield trap. */
     bne a0, t0, application_exception_handler
     call vTaskSwitchContext
     j processed_source
