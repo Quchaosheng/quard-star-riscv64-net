@@ -12,6 +12,20 @@
 		opensbi-domains {
 			compatible = "opensbi,domain,config";
 
+			trusted_mem: trusted-memory {
+				compatible = "opensbi,domain,memregion";
+				base = <0 0xbf800000>;
+				order = <23>;
+			};
+
+			trusted_uart: trusted-uart {
+				compatible = "opensbi,domain,memregion";
+				base = <0 0x10002000>;
+				order = <12>;
+				mmio;
+				devices = <&uart2>;
+			};
+
 			allmem: all-memory {
 				compatible = "opensbi,domain,memregion";
 				base = <0 0>;
@@ -21,7 +35,7 @@
 			udomain: untrusted-domain {
 				compatible = "opensbi,domain,instance";
 				possible-harts = <&cpu0>;
-				regions = <&allmem 0x7>;
+				regions = <&trusted_mem 0x0>, <&trusted_uart 0x0>, <&allmem 0x7>;
 				boot-hart = <&cpu0>;
 				next-arg1 = <0 0x82000000>;
 				next-addr = <0 0x80200000>;
