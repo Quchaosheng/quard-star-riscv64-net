@@ -823,13 +823,13 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     stats["tftp_timeouts"] += 1
                     continue
                 if udp[3] == TFTP_PORT and tftp_state == "rrq":
-                    expected_rrq = (b"\x00\x01m7e.bin\x00octet\x00"
+                    expected_rrq = (b"\x00\x01m7e.bin\x00octet\x00windowsize\x004\x00"
                                     if require_tftp_1m else b"\x00\x01m7d.bin\x00octet\x00")
                     if udp[4] != expected_rrq:
                         raise ValueError("unexpected TFTP RRQ")
                     tftp_guest_port = udp[2]
                     stats["tftp_rrq"] += 1
-                    send_count = TFTP_WINDOW if require_tftp_1m else 1
+                    send_count = 1
                     for initial_block in range(1, send_count + 1):
                         payload = tftp_data(initial_block, require_tftp_1m)
                         peer.send(encode_udp(

@@ -33,6 +33,24 @@ int tftp_rrq_encode(unsigned char *packet, int capacity, const char *filename)
     return offset;
 }
 
+int tftp_rrq_window_encode(unsigned char *packet, int capacity,
+                           const char *filename, int window)
+{
+    static const char option[] = "windowsize";
+    static const char value[] = "4";
+    int length = tftp_rrq_encode(packet, capacity, filename);
+    if (length < 0 || window != 4)
+        return length < 0 ? length : NET_ERR_PARAM;
+    int extra = (int)sizeof(option) + (int)sizeof(value);
+    if (length + extra > capacity)
+        return NET_ERR_SIZE;
+    for (int i = 0; i < (int)sizeof(option); i++)
+        packet[length++] = (unsigned char)option[i];
+    for (int i = 0; i < (int)sizeof(value); i++)
+        packet[length++] = (unsigned char)value[i];
+    return length;
+}
+
 int tftp_data_parse(const unsigned char *packet, int length,
                     uint16_t expected_block, const unsigned char **data,
                     int *data_length)

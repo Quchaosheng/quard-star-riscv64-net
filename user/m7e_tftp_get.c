@@ -3,6 +3,7 @@
 #include "sha256.h"
 
 int tftp_rrq_encode(unsigned char *, int, const char *);
+int tftp_rrq_window_encode(unsigned char *, int, const char *, int);
 int tftp_data_parse(const unsigned char *, int, uint16_t,
                     const unsigned char **, int *);
 int tftp_ack_encode(unsigned char *, int, uint16_t);
@@ -33,7 +34,7 @@ int main(void)
         0x46,0xa9,0x94,0xc4,0x41,0xfd,0x02,0x55,0x2c,0xc6,0x02,0x23,
         0x52,0xe3,0xd8,0x6d,0x2f,0xab,0x7c,0x83,
     };
-    unsigned char packet[516], rrq[32], ack[4], digest[32];
+    unsigned char packet[516], rrq[64], ack[4], digest[32];
     const unsigned char *data;
     net_sockaddr_in server = { NET_AF_INET, net_port(69), 0xc0a86401U };
     net_sockaddr_in source;
@@ -42,7 +43,7 @@ int main(void)
     sha256_ctx_t hash;
     int netfd = -1, filefd = -1, rrq_length, total = 0;
 
-    rrq_length = tftp_rrq_encode(rrq, sizeof(rrq), "m7e.bin");
+    rrq_length = tftp_rrq_window_encode(rrq, sizeof(rrq), "m7e.bin", 4);
     netfd = sys_socket(NET_AF_INET, NET_SOCK_DGRAM, 0);
     filefd = sys_file_open("m7e.bin", 1);
     if (rrq_length < 0 || netfd < 0 || filefd < 0 ||
