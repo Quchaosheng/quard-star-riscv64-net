@@ -15,5 +15,6 @@ done
 grep -Fq -- '-smp 8' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:TRUSTED_READY' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:HART_ONLINE:7' "$root/scripts/m8-smoke.sh"
+grep -Fq 'rm -f "$root/out/m8/disk/disk.img"' "$root/scripts/m8-build.sh"
 grep -Fq 'QS:TEST_PASS:m8-smoke' "$root/kernel/src/selftest.c"
 echo 'PASS: M8 trusted-domain and seven-hart contracts'
