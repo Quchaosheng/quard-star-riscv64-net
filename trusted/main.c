@@ -7,12 +7,20 @@
 //消息队列控制权柄
 QueueHandle_t xMyQueueHandle;
 
-void trusted_trace_task_pc(uintptr_t pc)
+static void acceptance_task(void *arg);
+
+void trusted_trace_task_context(const uintptr_t *context)
 {
-    if (pc >= 0xbf800000UL && pc < 0xbf900000UL)
-        _puts("QS:TRUSTED_TASK_PC_OK\n");
+    uintptr_t status = context[30];
+
+    if (context[0] == (uintptr_t)acceptance_task)
+        _puts("QS:TRUSTED_TASK_PC_ACCEPT\n");
     else
         _puts("QS:TRUSTED_TASK_PC_BAD\n");
+    if ((status & 0x122UL) == 0x120UL)
+        _puts("QS:TRUSTED_TASK_STATUS_OK\n");
+    else
+        _puts("QS:TRUSTED_TASK_STATUS_BAD\n");
 }
 
 void freertos_risc_v_application_exception_handler(uintptr_t cause)
