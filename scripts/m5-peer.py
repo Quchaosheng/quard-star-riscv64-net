@@ -257,6 +257,10 @@ def tftp_data(block: int, large: bool = False) -> bytes:
     return b"\x00\x03" + struct.pack("!H", block) + payload
 
 
+def tftp_oack() -> bytes:
+    return b"\x00\x06windowsize\x004\x00"
+
+
 def encode_tcp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
                dst_ip: bytes, src_port: int, dst_port: int,
                sequence: int, acknowledgement: int, flags: int,
@@ -830,6 +834,11 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     tftp_guest_port = udp[2]
                     stats["tftp_rrq"] += 1
                     send_count = 1
+                    if require_tftp_1m:
+                        peer.send(encode_udp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            TFTP_DATA_PORT, tftp_guest_port, tftp_oack()))
+                        send_count = TFTP_WINDOW
                     for initial_block in range(1, send_count + 1):
                         payload = tftp_data(initial_block, require_tftp_1m)
                         peer.send(encode_udp(
@@ -845,6 +854,8 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                     if len(udp[4]) != 4 or udp[4][:2] != b"\x00\x04":
                         raise ValueError("unexpected TFTP ACK")
                     block = struct.unpack_from("!H", udp[4], 2)[0]
+                    if require_tftp_1m and tftp_state == "data" and block == 0:
+                        continue
                     if require_tftp_1m and tftp_state == "data":
                         if block != tftp_block:
                             raise ValueError("unexpected TFTP block")
