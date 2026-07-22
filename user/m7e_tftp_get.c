@@ -7,6 +7,7 @@ int tftp_rrq_window_encode(unsigned char *, int, const char *, int);
 int tftp_data_parse(const unsigned char *, int, uint16_t,
                     const unsigned char **, int *);
 int tftp_ack_encode(unsigned char *, int, uint16_t);
+int tftp_oack_window_parse(const unsigned char *, int, int *);
 
 #define FILE_SIZE (1024 * 1024)
 
@@ -78,6 +79,10 @@ int main(void)
                 source.port == 0)
                 return fail(netfd, filefd, "data");
             if (received >= 2 && packet[0] == 0 && packet[1] == 6) {
+                int window_size;
+                if (tftp_oack_window_parse(packet, received, &window_size) < 0 ||
+                    window_size != 4)
+                    return fail(netfd, filefd, "oack");
                 if (tftp_ack_encode(ack, sizeof(ack), 0) < 0 ||
                     sys_sendto(netfd, ack, sizeof(ack), 0, &source,
                                sizeof(source)) != 4)
