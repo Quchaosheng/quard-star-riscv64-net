@@ -91,7 +91,7 @@ definitions. */
 .extern vPortUpdateTimer
 .extern xTaskReturnAddress
 .extern _puts
-.extern trusted_trace_task_pc
+.extern trusted_trace_task_context
 
 .weak freertos_risc_v_application_exception_handler
 .weak freertos_risc_v_application_interrupt_handler
@@ -204,8 +204,8 @@ xPortStartFirstTask:
     load_x  sp, pxCurrentTCB            /* Load pxCurrentTCB. */
     load_x  sp, 0( sp )                 /* Read sp from first TCB member. */
 
-    load_x  a0, 0( sp )
-    call trusted_trace_task_pc
+    mv a0, sp
+    call trusted_trace_task_context
 
     load_x  x5, 0( sp )
     csrw    sepc, x5
