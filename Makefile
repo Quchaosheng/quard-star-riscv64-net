@@ -90,6 +90,7 @@ test-host:
 	./tests/host/test_m7e_peer.sh
 	./tests/host/test_m7e_smoke_script.sh
 	./tests/host/test_m8_contracts.sh
+	./tests/host/test_m9_contracts.sh
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
