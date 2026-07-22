@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -eu
+root=${QS_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+export QS_ROOT=$root QS_STAGE=m7e
+export QS_M7A_TEST=1 QS_M7B_TEST=1 QS_M7C_TEST=1 QS_M7D_TEST=1 QS_M7E_TEST=1
+rm -f "$root/out/m7e/disk/disk.img"
+exec "$root/scripts/m6b-build.sh"

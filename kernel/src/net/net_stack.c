@@ -12,6 +12,7 @@
 #include <timeros/net/netif_virtio.h>
 #include <timeros/net/pktbuf.h>
 #include <timeros/net/socket.h>
+#include <timeros/net/tcp.h>
 #include <timeros/net/timer.h>
 #include <timeros/net/udp.h>
 
@@ -198,6 +199,9 @@ net_err_t net_stack_init(void)
     err = ipv4_init();
     if (err < 0)
         return err;
+    err = tcp_init();
+    if (err < 0)
+        return err;
     err = icmpv4_init();
     if (err < 0)
         return err;
@@ -312,6 +316,9 @@ void net_stack_worker(void *arg)
             (u64)timer_ms * NET_TIME_TICKS_PER_MS < wait_ticks) {
             wait_ticks = (u64)timer_ms * NET_TIME_TICKS_PER_MS;
         }
-        (void)net_stack_poll_once(netif, net_stack_now() + wait_ticks);
+        net_err_t poll_result = net_stack_poll_once(
+            netif, net_stack_now() + wait_ticks);
+        while (poll_result == NET_ERR_OK)
+            poll_result = net_stack_poll_once(netif, net_stack_now());
     }
 }

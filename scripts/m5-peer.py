@@ -19,8 +19,30 @@ ARP_REPLY = 2
 ICMP_ECHO_REPLY = 0
 ICMP_ECHO_REQUEST = 8
 IPPROTO_UDP = 17
+IPPROTO_TCP = 6
 GUEST_UDP_PORT = 4600
 HOST_UDP_PORT = 4700
+DNS_PORT = 53
+NTP_PORT = 123
+NTP_TIMEOUT_PORT = 124
+TFTP_PORT = 69
+TFTP_TIMEOUT_PORT = 70
+TFTP_DATA_PORT = 6970
+HOST_TCP_PORT = 4800
+GUEST_TCP_SERVER_PORT = 4801
+HTTP_PORT = 4800
+HOST_TCP_SERVER_PORT = 4802
+TCP_SERVER_PAYLOAD = b"quard-star-m6c2"
+HTTP_REQUEST = (b"GET /m7b.txt HTTP/1.0\r\n"
+                b"Host: m7a.test\r\nConnection: close\r\n\r\n")
+HTTP_RESPONSE = (b"HTTP/1.0 200 OK\r\nContent-Length: 13\r\n"
+                 b"Connection: close\r\n\r\nm7b-http-body")
+STRESS_PARALLEL = 8
+STRESS_RECONNECTS = 100
+TCP_FLAG_FIN = 0x01
+TCP_FLAG_SYN = 0x02
+TCP_FLAG_PSH = 0x08
+TCP_FLAG_ACK = 0x10
 GUEST_MAC = bytes.fromhex("525400123456")
 HOST_MAC = bytes.fromhex("525400123457")
 GUEST_IP = bytes((192, 168, 100, 2))
@@ -30,6 +52,7 @@ TEST_SEQUENCE = 1
 HOST_IDENTIFIER = 0x4D36
 HOST_SEQUENCE = 1
 M4_PAYLOAD_SIZE = 32
+TFTP_WINDOW = 4
 
 
 def checksum16(data: bytes) -> int:
@@ -200,6 +223,103 @@ def encode_udp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
     return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + udp)
 
 
+def dns_response(query: bytes, address: bytes) -> bytes | None:
+    if len(query) < 17 or struct.unpack_from("!HHHH", query, 4) != \
+            (1, 0, 0, 0):
+        return None
+    question = query[12:]
+    if question == b"\x03m7a\x04test\x00\x00\x01\x00\x01":
+        pass
+    elif question == b"\x07timeout\x03m7a\x00\x00\x01\x00\x01":
+        return b""
+    else:
+        return None
+    return query[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" + \
+        question + b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x1e\x00\x04" + \
+        address
+
+
+def ntp_response(query: bytes) -> bytes | None:
+    if len(query) != 48 or query[0] != 0x1b:
+        return None
+    response = bytearray(48)
+    response[0] = 0x24
+    response[1] = 1
+    response[24:32] = query[40:48]
+    response[40:44] = bytes.fromhex("83aa7efb")
+    return bytes(response)
+
+
+def tftp_data(block: int, large: bool = False) -> bytes:
+    start = (block - 1) * 512
+    size = 0 if large and block == 2049 else (512 if large or block == 1 else 188)
+    payload = bytes((index & 0xff) for index in range(start, start + size))
+    return b"\x00\x03" + struct.pack("!H", block) + payload
+
+
+def tftp_oack() -> bytes:
+    return b"\x00\x06windowsize\x004\x00"
+
+
+def encode_tcp(src_mac: bytes, dst_mac: bytes, src_ip: bytes,
+               dst_ip: bytes, src_port: int, dst_port: int,
+               sequence: int, acknowledgement: int, flags: int,
+               payload: bytes = b"", window: int = 4096) -> bytes:
+    tcp = struct.pack("!HHIIBBHHH", src_port, dst_port, sequence,
+                      acknowledgement, 5 << 4, flags, window, 0, 0)
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_TCP)) + \
+        struct.pack("!H", len(tcp) + len(payload))
+    tcp += payload
+    tcp = tcp[:16] + struct.pack("!H", checksum16(pseudo + tcp)) + tcp[18:]
+    total_length = 20 + len(tcp)
+    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, total_length, 3, 0x4000,
+                     64, IPPROTO_TCP, 0, src_ip, dst_ip)
+    ip = ip[:10] + struct.pack("!H", checksum16(ip)) + ip[12:]
+    return _ether(dst_mac, src_mac, ETHERTYPE_IPV4, ip + tcp)
+
+
+def decode_tcp(frame: bytes):
+    if len(frame) < ETHERNET_HEADER_SIZE + 20 + 20:
+        return None
+    if struct.unpack_from("!H", frame, 12)[0] != ETHERTYPE_IPV4:
+        return None
+    ip_offset = ETHERNET_HEADER_SIZE
+    version_ihl = frame[ip_offset]
+    ihl = (version_ihl & 0x0F) * 4
+    total_length = struct.unpack_from("!H", frame, ip_offset + 2)[0]
+    if version_ihl >> 4 != 4 or ihl < 20 or \
+            total_length < ihl + 20 or len(frame) < ip_offset + total_length:
+        return None
+    ip_header = frame[ip_offset:ip_offset + ihl]
+    if checksum16(ip_header) != 0 or ip_header[9] != IPPROTO_TCP:
+        return None
+    src_ip, dst_ip = ip_header[12:16], ip_header[16:20]
+    tcp_offset = ip_offset + ihl
+    tcp = frame[tcp_offset:ip_offset + total_length]
+    data_offset = (tcp[12] >> 4) * 4
+    if data_offset < 20 or data_offset > len(tcp):
+        return None
+    pseudo = src_ip + dst_ip + bytes((0, IPPROTO_TCP)) + \
+        struct.pack("!H", len(tcp))
+    if checksum16(pseudo + tcp) != 0:
+        return None
+    src_port, dst_port, sequence, acknowledgement = struct.unpack_from(
+        "!HHII", tcp, 0)
+    return {
+        "src_mac": frame[6:12],
+        "dst_mac": frame[:6],
+        "src_ip": src_ip,
+        "dst_ip": dst_ip,
+        "src_port": src_port,
+        "dst_port": dst_port,
+        "seq": sequence,
+        "ack": acknowledgement,
+        "flags": tcp[13],
+        "window": struct.unpack_from("!H", tcp, 14)[0],
+        "payload": tcp[data_offset:],
+    }
+
+
 def payload_checksum(payload: bytes) -> int:
     return sum(payload) & 0xFFFFFFFF
 
@@ -237,9 +357,251 @@ def write_stats(path: str | None, stats: dict, elapsed: float) -> None:
         pathlib.Path(path).write_text(json.dumps(output) + "\n", encoding="utf-8")
 
 
+class PassiveTcpStress:
+    def __init__(self, peer, stats: dict):
+        self.peer = peer
+        self.stats = stats
+        self.connections = {}
+
+    @staticmethod
+    def _payload(index: int) -> bytes:
+        return f"m6c2-{index:03d}".encode()
+
+    def _send(self, connection: dict, flags: int,
+              payload: bytes = b"") -> None:
+        self.peer.send(encode_tcp(
+            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+            connection["host_port"], GUEST_TCP_SERVER_PORT,
+            connection["host_next"], connection["guest_next"],
+            flags, payload))
+
+    def _open(self, index: int) -> None:
+        host_port = HOST_TCP_SERVER_PORT + index
+        connection = {
+            "index": index,
+            "host_port": host_port,
+            "payload": self._payload(index),
+            "host_next": 12000 + index * 32,
+            "guest_next": 0,
+            "state": "syn-ack",
+            "fin_acked": False,
+        }
+        self.connections[host_port] = connection
+        self._send(connection, TCP_FLAG_SYN)
+
+    def start(self) -> None:
+        self._open(0)
+
+    def retry_pending_syns(self) -> None:
+        for connection in self.connections.values():
+            if connection["state"] == "syn-ack":
+                self._send(connection, TCP_FLAG_SYN)
+
+    def _send_fin(self, connection: dict) -> None:
+        self._send(connection, TCP_FLAG_FIN | TCP_FLAG_ACK)
+        connection["host_next"] += 1
+        connection["state"] = "closing"
+        self.stats["tcp_server_stress_outstanding"] += 1
+
+    def _finish(self, connection: dict) -> None:
+        if not connection["fin_acked"]:
+            self.stats["tcp_server_stress_outstanding"] -= 1
+        connection["guest_next"] += 1
+        self._send(connection, TCP_FLAG_ACK)
+        connection["state"] = "complete"
+        self.stats["tcp_server_stress_fin"] += 1
+        self.stats["tcp_server_stress_live"] -= 1
+        index = connection["index"]
+        if index >= STRESS_PARALLEL:
+            self.stats["tcp_server_stress_reconnects"] += 1
+            if index + 1 < STRESS_PARALLEL + STRESS_RECONNECTS:
+                self._open(index + 1)
+        elif all(self.connections[HOST_TCP_SERVER_PORT + current]["state"] ==
+                 "complete" for current in range(STRESS_PARALLEL)):
+            self._open(STRESS_PARALLEL)
+
+    def handle(self, segment: dict) -> None:
+        connection = self.connections.get(segment["dst_port"])
+        if connection is None:
+            raise ValueError("unexpected TCP stress tuple")
+        flags = segment["flags"]
+        state = connection["state"]
+
+        if state == "syn-ack":
+            if flags != (TCP_FLAG_SYN | TCP_FLAG_ACK) or \
+                    segment["ack"] != connection["host_next"] + 1 or \
+                    segment["payload"]:
+                raise ValueError("unexpected TCP stress SYN-ACK")
+            connection["guest_next"] = segment["seq"] + 1
+            connection["host_next"] += 1
+            self._send(connection, TCP_FLAG_ACK)
+            self._send(connection, TCP_FLAG_PSH | TCP_FLAG_ACK,
+                       connection["payload"])
+            connection["host_next"] += len(connection["payload"])
+            connection["state"] = "data-ack"
+            self.stats["tcp_server_stress_handshakes"] += 1
+            self.stats["tcp_server_stress_outstanding"] += 1
+            return
+
+        if state == "data-ack":
+            data_start = connection["host_next"] - len(connection["payload"])
+            if flags == (TCP_FLAG_SYN | TCP_FLAG_ACK) and \
+                    segment["seq"] + 1 == connection["guest_next"] and \
+                    segment["ack"] == data_start and not segment["payload"]:
+                self.peer.send(encode_tcp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    connection["host_port"], GUEST_TCP_SERVER_PORT,
+                    data_start, connection["guest_next"], TCP_FLAG_ACK))
+                self.peer.send(encode_tcp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    connection["host_port"], GUEST_TCP_SERVER_PORT,
+                    data_start, connection["guest_next"],
+                    TCP_FLAG_PSH | TCP_FLAG_ACK, connection["payload"]))
+                return
+            if flags != TCP_FLAG_ACK or \
+                    segment["seq"] != connection["guest_next"] or \
+                    segment["ack"] != connection["host_next"] or \
+                    segment["payload"]:
+                raise ValueError(
+                    "unexpected TCP stress data ACK "
+                    f"flags={flags:#x} seq={segment['seq']} "
+                    f"ack={segment['ack']} expected_seq="
+                    f"{connection['guest_next']} expected_ack="
+                    f"{connection['host_next']} "
+                    f"payload={len(segment['payload'])}"
+                )
+            connection["state"] = "echo"
+            self.stats["tcp_server_stress_outstanding"] -= 1
+            return
+
+        if state == "echo":
+            if flags == TCP_FLAG_ACK and \
+                    segment["seq"] == connection["guest_next"] and \
+                    segment["ack"] == connection["host_next"] and \
+                    not segment["payload"]:
+                return
+            if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                    segment["seq"] != connection["guest_next"] or \
+                    segment["ack"] != connection["host_next"] or \
+                    segment["payload"] != connection["payload"]:
+                raise ValueError(
+                    "unexpected TCP stress Echo "
+                    f"flags={flags:#x} seq={segment['seq']} "
+                    f"ack={segment['ack']} expected_seq="
+                    f"{connection['guest_next']} expected_ack="
+                    f"{connection['host_next']} "
+                    f"payload={len(segment['payload'])}"
+                )
+            connection["guest_next"] += len(connection["payload"])
+            self._send(connection, TCP_FLAG_ACK)
+            connection["state"] = "held"
+            self.stats["tcp_server_stress_echo"] += 1
+            self.stats["tcp_server_stress_live"] += 1
+            self.stats["tcp_server_stress_parallel_peak"] = max(
+                self.stats["tcp_server_stress_parallel_peak"],
+                self.stats["tcp_server_stress_live"])
+            index = connection["index"]
+            if index + 1 < STRESS_PARALLEL:
+                self._open(index + 1)
+            elif index + 1 == STRESS_PARALLEL:
+                for current in range(STRESS_PARALLEL):
+                    self._send_fin(
+                        self.connections[HOST_TCP_SERVER_PORT + current])
+            else:
+                self._send_fin(connection)
+            return
+
+        if state == "held" and \
+                flags == (TCP_FLAG_PSH | TCP_FLAG_ACK) and \
+                segment["seq"] + len(segment["payload"]) == \
+                    connection["guest_next"] and \
+                segment["ack"] == connection["host_next"] and \
+                segment["payload"] == connection["payload"]:
+            self._send(connection, TCP_FLAG_ACK)
+            return
+
+        if state == "closing":
+            if flags == (TCP_FLAG_PSH | TCP_FLAG_ACK) and \
+                    segment["seq"] + len(segment["payload"]) == \
+                        connection["guest_next"] and \
+                    segment["ack"] + 1 == connection["host_next"] and \
+                    segment["payload"] == connection["payload"]:
+                self.peer.send(encode_tcp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    connection["host_port"], GUEST_TCP_SERVER_PORT,
+                    connection["host_next"] - 1,
+                    connection["guest_next"],
+                    TCP_FLAG_FIN | TCP_FLAG_ACK))
+                return
+            expected = (segment["seq"] == connection["guest_next"] and
+                        segment["ack"] == connection["host_next"] and
+                        not segment["payload"])
+            if not expected:
+                raise ValueError(
+                    "unexpected TCP stress close sequence "
+                    f"flags={flags:#x} seq={segment['seq']} "
+                    f"ack={segment['ack']} expected_seq="
+                    f"{connection['guest_next']} expected_ack="
+                    f"{connection['host_next']} "
+                    f"payload={len(segment['payload'])}"
+                )
+            if flags == TCP_FLAG_ACK:
+                if not connection["fin_acked"]:
+                    connection["fin_acked"] = True
+                    self.stats["tcp_server_stress_outstanding"] -= 1
+                return
+            if flags == (TCP_FLAG_FIN | TCP_FLAG_ACK):
+                self._finish(connection)
+                return
+            raise ValueError("unexpected TCP stress close flags")
+
+        if state == "complete" and \
+                flags == TCP_FLAG_ACK and \
+                segment["seq"] == connection["guest_next"] and \
+                segment["ack"] == connection["host_next"] and \
+                not segment["payload"]:
+            return
+
+        if state == "complete" and \
+                flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                segment["seq"] + 1 == connection["guest_next"] and \
+                segment["ack"] == connection["host_next"] and \
+                not segment["payload"]:
+            self._send(connection, TCP_FLAG_ACK)
+            return
+
+        raise ValueError(
+            f"unexpected TCP stress state={state} "
+            f"flags={flags:#x} seq={segment['seq']} ack={segment['ack']} "
+            f"expected_seq={connection['guest_next']} "
+            f"expected_ack={connection['host_next']} "
+            f"payload={len(segment['payload'])}"
+        )
+
+    def complete(self) -> bool:
+        return (
+            self.stats["tcp_server_stress_handshakes"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_echo"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_parallel_peak"] ==
+            STRESS_PARALLEL and
+            self.stats["tcp_server_stress_reconnects"] ==
+            STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_fin"] ==
+            STRESS_PARALLEL + STRESS_RECONNECTS and
+            self.stats["tcp_server_stress_outstanding"] == 0
+        )
+
+
 def run_peer(interface: str, raw_count: int, timeout: float,
              ready_file: str | None, stats_file: str | None,
-             require_udp: bool = False) -> int:
+             require_udp: bool = False, require_tcp: bool = False,
+             require_tcp_server: bool = False,
+             require_tcp_server_stress: bool = False,
+             require_dns: bool = False, require_http: bool = False,
+             require_ntp: bool = False, require_tftp: bool = False,
+             require_tftp_1m: bool = False) -> int:
     started = time.monotonic()
     deadline = started + timeout
     stats = {
@@ -252,10 +614,67 @@ def run_peer(interface: str, raw_count: int, timeout: float,
         "host_echo_replies": 0,
         "udp_requests": 0,
         "udp_replies": 0,
+        "dns_queries": 0,
+        "dns_replies": 0,
+        "dns_timeouts": 0,
+        "http_requests": 0,
+        "http_responses": 0,
+        "http_outstanding": 0,
+        "ntp_queries": 0,
+        "ntp_replies": 0,
+        "ntp_timeouts": 0,
+        "tftp_rrq": 0,
+        "tftp_data": 0,
+        "tftp_acks": 0,
+        "tftp_timeouts": 0,
+        "tftp_outstanding": 0,
+        "tftp_bytes": 0,
+        "tcp_syn": 0,
+        "tcp_data": 0,
+        "tcp_retransmissions": 0,
+        "tcp_fin": 0,
+        "tcp_outstanding": 0,
+        "tcp_server_syn": 0,
+        "tcp_server_handshakes": 0,
+        "tcp_server_data": 0,
+        "tcp_server_echo": 0,
+        "tcp_server_retransmissions": 0,
+        "tcp_server_fin": 0,
+        "tcp_server_outstanding": 0,
+        "tcp_server_stress_handshakes": 0,
+        "tcp_server_stress_echo": 0,
+        "tcp_server_stress_parallel_peak": 0,
+        "tcp_server_stress_reconnects": 0,
+        "tcp_server_stress_fin": 0,
+        "tcp_server_stress_outstanding": 0,
+        "tcp_server_stress_live": 0,
     }
     expected_raw = 0
     host_arp_request_sent = False
     host_echo_request_sent = False
+    tcp_tuple = None
+    tcp_guest_isn = 0
+    tcp_guest_data_end = 0
+    tcp_host_next = 0
+    tcp_payload = b""
+    tcp_handshake_ack_seen = False
+    tcp_data_seen = False
+    tcp_echo_sent = False
+    tcp_fin_sent = False
+    tcp_server_started = False
+    tcp_server_guest_isn = 0
+    tcp_server_guest_next = 0
+    tcp_server_host_next = 12000
+    tcp_server_state = "syn-ack"
+    tcp_server_stress = None
+    http_tuple = None
+    http_guest_next = 0
+    http_host_next = 9001
+    http_state = "syn"
+    tftp_guest_port = 0
+    tftp_state = "rrq"
+    tftp_block = 1
+    tftp_next_block = 1
 
     def complete() -> bool:
         return (
@@ -269,6 +688,48 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             (not require_udp or (
                 stats["udp_requests"] >= 1 and
                 stats["udp_replies"] >= 1
+            )) and
+            (not require_dns or (
+                stats["dns_queries"] >= 2 and
+                stats["dns_replies"] >= 1 and
+                stats["dns_timeouts"] >= 1
+            )) and
+            (not require_http or (
+                stats["http_requests"] >= 1 and
+                stats["http_responses"] >= 1 and
+                stats["http_outstanding"] == 0
+            )) and
+            (not require_ntp or (
+                stats["ntp_queries"] >= 1 and
+                stats["ntp_replies"] >= 1 and
+                stats["ntp_timeouts"] >= 1
+            )) and
+            (not require_tftp or (
+                stats["tftp_rrq"] >= 1 and
+                stats["tftp_data"] >= (2049 if require_tftp_1m else 2) and
+                stats["tftp_acks"] >= (2049 if require_tftp_1m else 2) and
+                stats["tftp_timeouts"] >= 1 and
+                stats["tftp_outstanding"] == 0
+            )) and
+            (not require_tcp or (
+                stats["tcp_syn"] >= 1 and
+                stats["tcp_data"] >= 1 and
+                stats["tcp_retransmissions"] >= 1 and
+                stats["tcp_fin"] >= 1 and
+                stats["tcp_outstanding"] == 0
+            )) and
+            (not require_tcp_server or (
+                stats["tcp_server_syn"] >= 1 and
+                stats["tcp_server_handshakes"] >= 1 and
+                stats["tcp_server_data"] >= 1 and
+                stats["tcp_server_echo"] >= 1 and
+                stats["tcp_server_retransmissions"] >= 1 and
+                stats["tcp_server_fin"] >= 1 and
+                stats["tcp_server_outstanding"] == 0
+            )) and
+            (not require_tcp_server_stress or (
+                tcp_server_stress is not None and
+                tcp_server_stress.complete()
             ))
         )
 
@@ -282,8 +743,15 @@ def run_peer(interface: str, raw_count: int, timeout: float,
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"timed out with stats {stats}")
-            peer.settimeout(remaining)
-            frame, address = peer.recvfrom(ETHERNET_MAX_FRAME)
+            peer.settimeout(min(remaining, 0.5)
+                            if tcp_server_stress is not None else remaining)
+            try:
+                frame, address = peer.recvfrom(ETHERNET_MAX_FRAME)
+            except socket.timeout:
+                if tcp_server_stress is None:
+                    raise
+                tcp_server_stress.retry_pending_syns()
+                continue
             if len(address) > 2 and address[2] == socket.PACKET_OUTGOING:
                 continue
             ethertype = struct.unpack_from("!H", frame, 12)[0] \
@@ -324,6 +792,103 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 continue
             event = decode_icmp_echo(frame)
             udp = decode_udp(frame)
+            if require_dns and udp is not None and \
+                    udp[0] == GUEST_IP and udp[1] == HOST_IP and \
+                    udp[3] == DNS_PORT:
+                stats["dns_queries"] += 1
+                response = dns_response(udp[4], b"\xc0\xa8\x64\x01")
+                if response == b"":
+                    stats["dns_timeouts"] += 1
+                elif response is None:
+                    raise ValueError("unexpected DNS query")
+                else:
+                    peer.send(encode_udp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        DNS_PORT, udp[2], response))
+                    stats["dns_replies"] += 1
+                continue
+            if require_ntp and udp is not None and \
+                    udp[0] == GUEST_IP and \
+                    udp[3] in (NTP_PORT, NTP_TIMEOUT_PORT):
+                stats["ntp_queries"] += 1
+                if udp[1] != HOST_IP or udp[3] == NTP_TIMEOUT_PORT:
+                    stats["ntp_timeouts"] += 1
+                    continue
+                response = ntp_response(udp[4])
+                if response is None:
+                    raise ValueError("unexpected NTP query")
+                peer.send(encode_udp(
+                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                    NTP_PORT, udp[2], response))
+                stats["ntp_replies"] += 1
+                continue
+            if require_tftp and udp is not None and udp[0] == GUEST_IP:
+                if udp[3] == TFTP_TIMEOUT_PORT:
+                    stats["tftp_timeouts"] += 1
+                    continue
+                if udp[3] == TFTP_PORT and tftp_state == "rrq":
+                    expected_rrq = (b"\x00\x01m7e.bin\x00octet\x00windowsize\x004\x00"
+                                    if require_tftp_1m else b"\x00\x01m7d.bin\x00octet\x00")
+                    if udp[4] != expected_rrq:
+                        raise ValueError("unexpected TFTP RRQ")
+                    tftp_guest_port = udp[2]
+                    stats["tftp_rrq"] += 1
+                    send_count = 1
+                    if require_tftp_1m:
+                        peer.send(encode_udp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            TFTP_DATA_PORT, tftp_guest_port, tftp_oack()))
+                        send_count = TFTP_WINDOW
+                    for initial_block in range(1, send_count + 1):
+                        payload = tftp_data(initial_block, require_tftp_1m)
+                        peer.send(encode_udp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            TFTP_DATA_PORT, tftp_guest_port, payload))
+                        stats["tftp_data"] += 1
+                        stats["tftp_bytes"] += len(payload) - 4
+                    stats["tftp_outstanding"] = send_count
+                    tftp_next_block = send_count + 1
+                    tftp_state = "data" if require_tftp_1m else "ack1"
+                    continue
+                if udp[3] == TFTP_DATA_PORT and udp[2] == tftp_guest_port:
+                    if len(udp[4]) != 4 or udp[4][:2] != b"\x00\x04":
+                        raise ValueError("unexpected TFTP ACK")
+                    block = struct.unpack_from("!H", udp[4], 2)[0]
+                    if require_tftp_1m and tftp_state == "data" and block == 0:
+                        continue
+                    if require_tftp_1m and tftp_state == "data":
+                        if block != tftp_block:
+                            raise ValueError("unexpected TFTP block")
+                        stats["tftp_acks"] += 1
+                        stats["tftp_outstanding"] -= 1
+                        if block == 2049:
+                            tftp_state = "complete"
+                        else:
+                            tftp_block += 1
+                            if tftp_next_block <= 2049:
+                                payload = tftp_data(tftp_next_block, True)
+                                peer.send(encode_udp(
+                                    HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                                    TFTP_DATA_PORT, tftp_guest_port, payload))
+                                stats["tftp_data"] += 1
+                                stats["tftp_bytes"] += len(payload) - 4
+                                stats["tftp_outstanding"] += 1
+                                tftp_next_block += 1
+                        continue
+                    if tftp_state == "ack1" and block == 1:
+                        peer.send(encode_udp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            TFTP_DATA_PORT, tftp_guest_port, tftp_data(2)))
+                        stats["tftp_acks"] += 1
+                        stats["tftp_data"] += 1
+                        tftp_state = "ack2"
+                        continue
+                    if tftp_state == "ack2" and block == 2:
+                        stats["tftp_acks"] += 1
+                        stats["tftp_outstanding"] = 0
+                        tftp_state = "complete"
+                        continue
+                    raise ValueError("unexpected TFTP block")
             if udp is not None and udp[0] == GUEST_IP and \
                     udp[1] == HOST_IP and udp[2] == GUEST_UDP_PORT and \
                     udp[3] == HOST_UDP_PORT:
@@ -331,6 +896,369 @@ def run_peer(interface: str, raw_count: int, timeout: float,
                 peer.send(encode_udp(HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
                                      HOST_UDP_PORT, GUEST_UDP_PORT, udp[4]))
                 stats["udp_replies"] += 1
+                continue
+            tcp = decode_tcp(frame)
+            if require_http and tcp is not None and \
+                    tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["dst_port"] == HTTP_PORT:
+                current_tuple = (tcp["src_port"], tcp["dst_port"])
+                flags = tcp["flags"]
+                if http_tuple is None:
+                    if flags != TCP_FLAG_SYN or tcp["ack"] != 0 or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected HTTP SYN")
+                    http_tuple = current_tuple
+                    http_guest_next = tcp["seq"] + 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HTTP_PORT, tcp["src_port"], http_host_next - 1,
+                        http_guest_next, TCP_FLAG_SYN | TCP_FLAG_ACK))
+                    http_state = "ack"
+                    continue
+                if current_tuple != http_tuple:
+                    raise ValueError("unexpected HTTP tuple")
+                if http_state == "ack":
+                    if flags == TCP_FLAG_SYN and tcp["seq"] + 1 == http_guest_next and \
+                            tcp["ack"] == 0 and not tcp["payload"]:
+                        peer.send(encode_tcp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            HTTP_PORT, tcp["src_port"], http_host_next - 1,
+                            http_guest_next, TCP_FLAG_SYN | TCP_FLAG_ACK))
+                        continue
+                    if flags != TCP_FLAG_ACK or tcp["seq"] != http_guest_next or \
+                            tcp["ack"] != http_host_next or tcp["payload"]:
+                        raise ValueError(
+                            "unexpected HTTP handshake ACK "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq={http_guest_next} "
+                            f"expected_ack={http_host_next} "
+                            f"payload={len(tcp['payload'])}")
+                    http_state = "request"
+                    continue
+                if http_state == "request":
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != http_guest_next or \
+                            tcp["ack"] != http_host_next or \
+                            tcp["payload"] != HTTP_REQUEST:
+                        raise ValueError("unexpected HTTP request")
+                    stats["http_requests"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HTTP_PORT, tcp["src_port"], http_host_next,
+                        http_guest_next + len(HTTP_REQUEST),
+                        TCP_FLAG_PSH | TCP_FLAG_ACK, HTTP_RESPONSE))
+                    http_host_next += len(HTTP_RESPONSE)
+                    http_guest_next += len(HTTP_REQUEST)
+                    stats["http_responses"] += 1
+                    stats["http_outstanding"] = 1
+                    http_state = "response-ack"
+                    continue
+                if http_state == "response-ack":
+                    if flags == (TCP_FLAG_PSH | TCP_FLAG_ACK) and \
+                            tcp["seq"] + len(tcp["payload"]) == http_guest_next and \
+                            tcp["ack"] == http_host_next - len(HTTP_RESPONSE) and \
+                            tcp["payload"] == HTTP_REQUEST:
+                        peer.send(encode_tcp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            HTTP_PORT, tcp["src_port"],
+                            http_host_next - len(HTTP_RESPONSE),
+                            http_guest_next, TCP_FLAG_PSH | TCP_FLAG_ACK,
+                            HTTP_RESPONSE))
+                        continue
+                    if flags != TCP_FLAG_ACK or tcp["seq"] != http_guest_next or \
+                            tcp["ack"] != http_host_next or tcp["payload"]:
+                        raise ValueError(
+                            "unexpected HTTP response ACK "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq={http_guest_next} "
+                            f"expected_ack={http_host_next} "
+                            f"payload={len(tcp['payload'])}")
+                    stats["http_outstanding"] = 0
+                    http_state = "fin"
+                    continue
+                if http_state == "fin":
+                    if flags == TCP_FLAG_ACK and \
+                            tcp["seq"] == http_guest_next and \
+                            tcp["ack"] == http_host_next and \
+                            not tcp["payload"]:
+                        continue
+                    if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
+                            tcp["seq"] != http_guest_next or \
+                            tcp["ack"] != http_host_next or tcp["payload"]:
+                        raise ValueError(
+                            "unexpected HTTP FIN "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq={http_guest_next} "
+                            f"expected_ack={http_host_next} "
+                            f"payload={len(tcp['payload'])}")
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HTTP_PORT, tcp["src_port"], http_host_next,
+                        http_guest_next + 1, TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    http_host_next += 1
+                    http_guest_next += 1
+                    stats["http_outstanding"] = 1
+                    http_state = "final"
+                    continue
+                if http_state in ("final", "complete") and \
+                        flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                        tcp["seq"] + 1 == http_guest_next and \
+                        tcp["ack"] == http_host_next - 1 and \
+                        not tcp["payload"]:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HTTP_PORT, tcp["src_port"], http_host_next - 1,
+                        http_guest_next, TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    continue
+                if flags != TCP_FLAG_ACK or tcp["seq"] != http_guest_next or \
+                        tcp["ack"] != http_host_next or tcp["payload"]:
+                    raise ValueError(
+                        "unexpected HTTP final ACK "
+                        f"flags={flags:#x} seq={tcp['seq']} ack={tcp['ack']} "
+                        f"expected_seq={http_guest_next} "
+                        f"expected_ack={http_host_next} "
+                        f"payload={len(tcp['payload'])}")
+                stats["http_outstanding"] = 0
+                http_state = "complete"
+                continue
+            if tcp is not None and tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["dst_port"] == HOST_TCP_PORT:
+                flags = tcp["flags"]
+                current_tuple = (tcp["src_port"], tcp["dst_port"])
+                if flags == TCP_FLAG_SYN:
+                    duplicate_syn = (
+                        require_tcp_server_stress and tcp_tuple is not None and
+                        not tcp_handshake_ack_seen and
+                        current_tuple == tcp_tuple and
+                        tcp["seq"] == tcp_guest_isn and tcp["ack"] == 0 and
+                        not tcp["payload"]
+                    )
+                    if duplicate_syn:
+                        peer.send(encode_tcp(
+                            HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                            HOST_TCP_PORT, tcp["src_port"], 9000,
+                            tcp_guest_data_end,
+                            TCP_FLAG_SYN | TCP_FLAG_ACK))
+                        continue
+                    if tcp_tuple is not None or tcp["ack"] != 0 or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected second TCP SYN")
+                    tcp_tuple = current_tuple
+                    tcp_guest_isn = tcp["seq"]
+                    tcp_guest_data_end = tcp_guest_isn + 1
+                    tcp_host_next = 9000 + 1
+                    stats["tcp_syn"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], 9000,
+                        tcp_guest_data_end, TCP_FLAG_SYN | TCP_FLAG_ACK))
+                    continue
+                if tcp_tuple != current_tuple:
+                    raise ValueError("unexpected TCP tuple")
+                if not tcp_handshake_ack_seen:
+                    if flags != TCP_FLAG_ACK or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or tcp["payload"]:
+                        raise ValueError("unexpected TCP handshake ACK")
+                    tcp_handshake_ack_seen = True
+                    continue
+                if not tcp_data_seen:
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or \
+                            not tcp["payload"]:
+                        raise ValueError("unexpected TCP data segment")
+                    tcp_data_seen = True
+                    tcp_payload = tcp["payload"]
+                    tcp_guest_data_end = tcp["seq"] + len(tcp_payload)
+                    stats["tcp_data"] += 1
+                    stats["tcp_outstanding"] = 1
+                    continue
+                if not tcp_echo_sent:
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_isn + 1 or \
+                            tcp["ack"] != tcp_host_next or \
+                            tcp["payload"] != tcp_payload:
+                        raise ValueError("unexpected TCP retransmission")
+                    stats["tcp_retransmissions"] += 1
+                    stats["tcp_outstanding"] = 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next,
+                        tcp_guest_data_end,
+                        TCP_FLAG_PSH | TCP_FLAG_ACK, tcp_payload))
+                    tcp_host_next += len(tcp_payload)
+                    tcp_echo_sent = True
+                    continue
+                if require_tcp_server_stress and \
+                        flags == (TCP_FLAG_PSH | TCP_FLAG_ACK) and \
+                        tcp["seq"] == tcp_guest_isn + 1 and \
+                        tcp["ack"] == tcp_host_next - len(tcp_payload) and \
+                        tcp["payload"] == tcp_payload:
+                    stats["tcp_retransmissions"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"],
+                        tcp_host_next - len(tcp_payload),
+                        tcp_guest_data_end, TCP_FLAG_PSH | TCP_FLAG_ACK,
+                        tcp_payload))
+                    continue
+                if not tcp_fin_sent:
+                    if flags == TCP_FLAG_ACK and \
+                            tcp["seq"] == tcp_guest_data_end and \
+                            tcp["ack"] == tcp_host_next and not tcp["payload"]:
+                        stats["tcp_outstanding"] = 0
+                        continue
+                    if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_guest_data_end or \
+                            tcp["ack"] != tcp_host_next or tcp["payload"]:
+                        raise ValueError(
+                            "unexpected TCP FIN "
+                            f"flags={flags:#x} seq={tcp['seq']} "
+                            f"ack={tcp['ack']} expected_seq="
+                            f"{tcp_guest_data_end} expected_ack="
+                            f"{tcp_host_next} payload={len(tcp['payload'])}"
+                        )
+                    stats["tcp_fin"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next,
+                        tcp["seq"] + 1, TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    tcp_host_next += 1
+                    tcp_fin_sent = True
+                    stats["tcp_outstanding"] = 1
+                    continue
+                if require_tcp_server_stress and \
+                        flags == (TCP_FLAG_FIN | TCP_FLAG_ACK) and \
+                        tcp["seq"] == tcp_guest_data_end and \
+                        tcp["ack"] == tcp_host_next - 1 and \
+                        not tcp["payload"]:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_PORT, tcp["src_port"], tcp_host_next - 1,
+                        tcp_guest_data_end + 1,
+                        TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    continue
+                if flags != TCP_FLAG_ACK or \
+                        tcp["seq"] != tcp_guest_data_end + 1 or \
+                        tcp["ack"] != tcp_host_next or tcp["payload"]:
+                    raise ValueError("unexpected TCP final ACK")
+                stats["tcp_outstanding"] = 0
+                if require_tcp_server_stress and tcp_server_stress is None:
+                    tcp_server_stress = PassiveTcpStress(peer, stats)
+                    tcp_server_stress.start()
+                elif require_tcp_server and not tcp_server_started:
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, 0, TCP_FLAG_SYN))
+                    tcp_server_started = True
+                    stats["tcp_server_syn"] += 1
+                continue
+            if tcp is not None and tcp_server_stress is not None and \
+                    tcp["src_mac"] == GUEST_MAC and \
+                    tcp["dst_mac"] == HOST_MAC and \
+                    tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["src_port"] == GUEST_TCP_SERVER_PORT:
+                tcp_server_stress.handle(tcp)
+                continue
+            if tcp is not None and tcp_server_started and \
+                    tcp["src_mac"] == GUEST_MAC and \
+                    tcp["dst_mac"] == HOST_MAC and \
+                    tcp["src_ip"] == GUEST_IP and \
+                    tcp["dst_ip"] == HOST_IP and \
+                    tcp["src_port"] == GUEST_TCP_SERVER_PORT and \
+                    tcp["dst_port"] == HOST_TCP_SERVER_PORT:
+                flags = tcp["flags"]
+                if tcp_server_state == "syn-ack":
+                    if flags != (TCP_FLAG_SYN | TCP_FLAG_ACK) or \
+                            tcp["ack"] != tcp_server_host_next + 1 or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server SYN-ACK")
+                    tcp_server_guest_isn = tcp["seq"]
+                    tcp_server_guest_next = tcp_server_guest_isn + 1
+                    tcp_server_host_next += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_ACK))
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_PSH | TCP_FLAG_ACK, TCP_SERVER_PAYLOAD))
+                    tcp_server_host_next += len(TCP_SERVER_PAYLOAD)
+                    stats["tcp_server_handshakes"] += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "data-ack"
+                    continue
+                if tcp_server_state == "data-ack":
+                    if flags != TCP_FLAG_ACK or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server data ACK")
+                    stats["tcp_server_data"] += 1
+                    stats["tcp_server_outstanding"] = 0
+                    tcp_server_state = "echo"
+                    continue
+                if tcp_server_state == "echo":
+                    if flags & TCP_FLAG_FIN:
+                        raise ValueError("premature TCP server FIN")
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"] != TCP_SERVER_PAYLOAD:
+                        raise ValueError("unexpected TCP server Echo")
+                    tcp_server_guest_next += len(TCP_SERVER_PAYLOAD)
+                    stats["tcp_server_echo"] += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "echo-retransmission"
+                    continue
+                if tcp_server_state == "echo-retransmission":
+                    if flags & TCP_FLAG_FIN:
+                        raise ValueError("premature TCP server FIN")
+                    if flags != (TCP_FLAG_PSH | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_isn + 1 or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"] != TCP_SERVER_PAYLOAD:
+                        raise ValueError("unexpected TCP server retransmission")
+                    stats["tcp_server_retransmissions"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_ACK))
+                    stats["tcp_server_outstanding"] = 0
+                    tcp_server_state = "fin"
+                    continue
+                if tcp_server_state == "fin":
+                    if flags != (TCP_FLAG_FIN | TCP_FLAG_ACK) or \
+                            tcp["seq"] != tcp_server_guest_next or \
+                            tcp["ack"] != tcp_server_host_next or \
+                            tcp["payload"]:
+                        raise ValueError("unexpected TCP server FIN")
+                    tcp_server_guest_next += 1
+                    stats["tcp_server_fin"] += 1
+                    peer.send(encode_tcp(
+                        HOST_MAC, GUEST_MAC, HOST_IP, GUEST_IP,
+                        HOST_TCP_SERVER_PORT, GUEST_TCP_SERVER_PORT,
+                        tcp_server_host_next, tcp_server_guest_next,
+                        TCP_FLAG_FIN | TCP_FLAG_ACK))
+                    tcp_server_host_next += 1
+                    stats["tcp_server_outstanding"] = 1
+                    tcp_server_state = "final-ack"
+                    continue
+                if flags != TCP_FLAG_ACK or \
+                        tcp["seq"] != tcp_server_guest_next or \
+                        tcp["ack"] != tcp_server_host_next or tcp["payload"]:
+                    raise ValueError("unexpected TCP server final ACK")
+                stats["tcp_server_outstanding"] = 0
+                tcp_server_state = "complete"
                 continue
             if event is None:
                 continue
@@ -372,17 +1300,29 @@ def main() -> int:
     parser.add_argument("--ready-file")
     parser.add_argument("--stats-file")
     parser.add_argument("--require-udp", action="store_true")
+    parser.add_argument("--require-tcp", action="store_true")
+    parser.add_argument("--require-tcp-server", action="store_true")
+    parser.add_argument("--require-tcp-server-stress", action="store_true")
+    parser.add_argument("--require-dns", action="store_true")
+    parser.add_argument("--require-http", action="store_true")
+    parser.add_argument("--require-ntp", action="store_true")
+    parser.add_argument("--require-tftp", action="store_true")
+    parser.add_argument("--require-tftp-1m", action="store_true")
     args = parser.parse_args()
     if args.raw_count < 0 or args.timeout <= 0:
         parser.error("--raw-count must be non-negative and --timeout positive")
 
     try:
         return run_peer(args.interface, args.raw_count, args.timeout,
-                        args.ready_file, args.stats_file, args.require_udp)
+                        args.ready_file, args.stats_file, args.require_udp,
+                        args.require_tcp, args.require_tcp_server,
+                        args.require_tcp_server_stress, args.require_dns,
+                        args.require_http, args.require_ntp,
+                        args.require_tftp or args.require_tftp_1m,
+                        args.require_tftp_1m)
     except (OSError, TimeoutError, ValueError) as error:
         print(f"m5-peer: {error}", file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -68,6 +68,9 @@ require_text kernel/src/trap.c \
   'timer_tick();' 'timer interrupts must only record a tick and re-arm'
 require_text kernel/src/trap.c \
   'cpu_take_resched()' 'user trap return must consume deferred rescheduling'
+require_order kernel/src/trap.c \
+  'intr_off();' 'set_user_trap_entry();' \
+  'user trap return must close the supervisor transition interrupt window'
 require_absence kernel/src/trap.c \
   'if (from_user) {' 'interrupt dispatch must not switch contexts directly'
 require_text scripts/m2b-build.sh \
