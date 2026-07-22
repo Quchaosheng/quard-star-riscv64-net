@@ -22,6 +22,10 @@ static int fail(int fd, const char *name)
 
 int main(void)
 {
+#ifdef QS_M7E_TEST
+    if (sys_exec("m7e_tftp_get") < 0)
+        return fail(-1, "tftp-exec");
+#endif
     unsigned char packet[516];
     unsigned char rrq[32];
     const unsigned char *data;
@@ -79,8 +83,10 @@ int main(void)
     printf("QS:M7D_TFTP_TIMEOUT_OK\n");
     if (sys_close(fd) < 0)
         return fail(-1, "close");
+#ifndef QS_M7E_TEST
     if (sys_dns_complete() < 0)
         return fail(-1, "complete");
+#endif
     while (1)
         sys_yield();
 }

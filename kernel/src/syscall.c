@@ -512,8 +512,42 @@ static int __sys_dns_complete(void)
 #ifdef QS_M7D_TEST
     m7d_mark_tftp_complete();
 #endif
+#ifdef QS_M7E_TEST
+    m7e_mark_file_complete();
+#endif
     return NET_ERR_OK;
 }
+
+#ifdef QS_M7E_TEST
+static int __sys_file_open(const char *user_name, int writable)
+{
+    char name[MAX_USER_STR];
+    if (copy_user_cstr(name, sizeof(name), user_name) < 0)
+        return NET_ERR_PARAM;
+    return file_open(name, writable);
+}
+
+static int __sys_file_read(int handle, char *user_data, size_t length)
+{
+    unsigned char buffer[512];
+    if (length == 0 || length > sizeof(buffer) ||
+        user_range_check(user_data, length, PTE_W) < 0)
+        return NET_ERR_PARAM;
+    int result = file_read(handle, buffer, length);
+    if (result < 0 || copy_to_user(user_data, buffer, (size_t)result) < 0)
+        return result < 0 ? result : NET_ERR_PARAM;
+    return result;
+}
+
+static int __sys_file_write(int handle, const char *user_data, size_t length)
+{
+    unsigned char buffer[512];
+    if (length == 0 || length > sizeof(buffer) ||
+        copy_from_user(buffer, user_data, length) < 0)
+        return NET_ERR_PARAM;
+    return file_write(handle, buffer, length);
+}
+#endif
 
 reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 {
@@ -560,6 +594,19 @@ reg_t __SYSCALL(size_t syscall_id, reg_t arg1, reg_t arg2, reg_t arg3)
 		return __sys_dns_resolve((const char *)arg1, (u32 *)arg2);
 	case __NR_dns_complete:
 		return __sys_dns_complete();
+#ifdef QS_M7E_TEST
+	case __NR_file_open:
+		return __sys_file_open((const char *)arg1, (int)arg2);
+	case __NR_file_read:
+		return __sys_file_read((int)arg1, (char *)arg2, (size_t)arg3);
+	case __NR_file_write:
+		return __sys_file_write((int)arg1, (const char *)arg2,
+		                        (size_t)arg3);
+	case __NR_file_sync:
+		return file_sync((int)arg1);
+	case __NR_file_close:
+		return file_close((int)arg1);
+#endif
 	default:
 		printk("unsupported syscall id:%d\n", syscall_id);
 		return -1;
