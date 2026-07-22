@@ -7,6 +7,14 @@
 //消息队列控制权柄
 QueueHandle_t xMyQueueHandle;
 
+static void acceptance_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(50));
+    _puts("QS:TRUSTED_SCHED_OK\n");
+    vTaskDelete(NULL);
+}
+
 void task1(void *p_arg)
 {
     int time = 1;
@@ -51,6 +59,7 @@ void task3(void *p_arg)
 static void vTaskCreate ()
 {
 
+    xTaskCreate(acceptance_task,"accept",512,NULL,2,NULL);
     xTaskCreate(task1,"task1",1024,NULL,3,NULL);
     xTaskCreate(task2,"task2",1024,NULL,4,NULL);
     xTaskCreate(task3,"task2",1024,NULL,5,NULL);
