@@ -3,6 +3,10 @@
 
 #include "os.h"
 
+#define EXC_INST_ACCESS  1
+#define EXC_LOAD_ACCESS  5
+#define EXC_STORE_ACCESS 7
+
 /* 读取 sepc 寄存器的值 */
 static inline reg_t r_sepc()
 {
