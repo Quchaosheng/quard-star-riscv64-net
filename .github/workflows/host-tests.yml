@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
       - name: Install host dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential libfdt-dev
       - name: Run host tests
