@@ -29,8 +29,8 @@ jobs:
         with:
           path: ~/.cache/quard-star-riscv64-net
           key: m8-${{ runner.os }}-${{ hashFiles('patches/**', '.gitmodules') }}
-      - name: Fetch FatFs
-        run: ./scripts/fetch-fatfs.sh
+      - name: Prepare FatFs
+        run: ./scripts/prepare-fatfs.sh
       - name: Build M8 firmware
         run: make m8-build
       - name: Run M8 QEMU/TAP smoke
