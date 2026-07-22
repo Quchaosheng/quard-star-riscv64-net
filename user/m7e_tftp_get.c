@@ -76,13 +76,16 @@ int main(void)
                 continue;
             }
             if (received < 0 || source.address != server.address ||
-                source.port == 0)
+                source.port == 0 ||
+                (server_port != 0 && source.port != server_port))
                 return fail(netfd, filefd, "data");
             if (received >= 2 && packet[0] == 0 && packet[1] == 6) {
                 int window_size;
                 if (tftp_oack_window_parse(packet, received, &window_size) < 0 ||
                     window_size != 4)
                     return fail(netfd, filefd, "oack");
+                if (server_port == 0)
+                    server_port = source.port;
                 if (tftp_ack_encode(ack, sizeof(ack), 0) < 0 ||
                     sys_sendto(netfd, ack, sizeof(ack), 0, &source,
                                sizeof(source)) != 4)
