@@ -7,6 +7,37 @@
 //消息队列控制权柄
 QueueHandle_t xMyQueueHandle;
 
+void freertos_risc_v_application_exception_handler(uintptr_t cause)
+{
+    switch (cause) {
+    case 1:
+        _puts("QS:TRUSTED_EXCEPTION:INSTRUCTION_ACCESS\n");
+        break;
+    case 2:
+        _puts("QS:TRUSTED_EXCEPTION:ILLEGAL_INSTRUCTION\n");
+        break;
+    case 5:
+        _puts("QS:TRUSTED_EXCEPTION:LOAD_ACCESS\n");
+        break;
+    case 7:
+        _puts("QS:TRUSTED_EXCEPTION:STORE_ACCESS\n");
+        break;
+    default:
+        _puts("QS:TRUSTED_EXCEPTION:OTHER\n");
+        break;
+    }
+    for (;;)
+        __asm volatile("wfi");
+}
+
+void freertos_risc_v_application_interrupt_handler(uintptr_t cause)
+{
+    (void)cause;
+    _puts("QS:TRUSTED_INTERRUPT:UNEXPECTED\n");
+    for (;;)
+        __asm volatile("wfi");
+}
+
 static void acceptance_task(void *arg)
 {
     (void)arg;
