@@ -12,6 +12,9 @@ if grep -Fq 'submodules: recursive' "$workflow" "$smoke_workflow"; then
   exit 1
 fi
 grep -Fq 'run: make test-host' "$workflow"
+grep -Fq 'uses: actions/checkout@v5' "$workflow"
+grep -Fq 'device-tree-compiler' "$workflow"
+grep -Fq 'gcc-riscv64-unknown-elf' "$workflow"
 grep -Fq 'workflow_dispatch:' "$smoke_workflow"
 grep -Fq 'run: make m8-build' "$smoke_workflow"
 grep -Fq 'run: sudo -E make m8-smoke' "$smoke_workflow"
