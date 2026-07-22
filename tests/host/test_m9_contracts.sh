@@ -27,7 +27,14 @@ grep -Fq 'docs/build-debug.md' "$root/README.md"
 grep -Fq 'docs/limitations.md' "$root/README.md"
 grep -Fq 'v0.9.0' "$root/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
-grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"
+grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
+grep -Fq 'QS:PMP_UNTRUSTED_DENY_OK' "$root/README.md"
+grep -Fq 'QS:PMP_TRUSTED_DENY_OK' "$root/README.md"
+grep -Fq 'QEMU-only' "$root/docs/limitations.md"
+if grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"; then
+  echo 'FAIL: limitations still describe the removed allmem boundary' >&2
+  exit 1
+fi
 if git -C "$root" ls-files '*.pcap' | grep -q .; then
   echo 'FAIL: generated packet captures must not be tracked' >&2
   exit 1
