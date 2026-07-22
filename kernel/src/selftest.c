@@ -80,6 +80,28 @@ static u32 m6c2_stress_peak;
 static u32 m6c2_stress_released;
 #endif
 static u64 started_at;
+#ifdef QS_M9_PMP_TEST
+static volatile u32 pmp_probe_state;
+
+static void m9_pmp_probe(void)
+{
+    pmp_probe_state = 1;
+    asm volatile("lw zero, 0(%0)" :: "r"((uintptr_t)PMP_PROBE_VA) : "memory");
+    if (pmp_probe_state != 2) {
+        printk("QS:PMP_UNTRUSTED_DENY_FAIL\n");
+        panic("trusted memory was readable");
+    }
+    printk("QS:PMP_UNTRUSTED_DENY_OK\n");
+}
+
+int m9_pmp_handle_load_fault(reg_t stval)
+{
+    if (pmp_probe_state != 1 || stval != PMP_PROBE_VA)
+        return 0;
+    pmp_probe_state = 2;
+    return 1;
+}
+#endif
 
 static void mark(u32 bit)
 {
@@ -110,6 +132,9 @@ void m2c_selftest_init(void)
     __atomic_store_n(&m6c2_stress_released, 0, __ATOMIC_RELAXED);
 #endif
     started_at = r_mtime();
+#ifdef QS_M9_PMP_TEST
+    m9_pmp_probe();
+#endif
 #endif
 }
 

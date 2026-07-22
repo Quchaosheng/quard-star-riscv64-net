@@ -7,21 +7,7 @@
 //消息队列控制权柄
 QueueHandle_t xMyQueueHandle;
 
-static void acceptance_task(void *arg);
-
-void trusted_trace_task_context(const uintptr_t *context)
-{
-    uintptr_t status = context[30];
-
-    if (context[0] == (uintptr_t)acceptance_task)
-        _puts("QS:TRUSTED_TASK_PC_ACCEPT\n");
-    else
-        _puts("QS:TRUSTED_TASK_PC_BAD\n");
-    if ((status & 0x122UL) == 0x120UL)
-        _puts("QS:TRUSTED_TASK_STATUS_OK\n");
-    else
-        _puts("QS:TRUSTED_TASK_STATUS_BAD\n");
-}
+static volatile uintptr_t pmp_probe_state;
 
 void freertos_risc_v_application_exception_handler(uintptr_t cause)
 {
@@ -33,6 +19,11 @@ void freertos_risc_v_application_exception_handler(uintptr_t cause)
         _puts("QS:TRUSTED_EXCEPTION:ILLEGAL_INSTRUCTION\n");
         break;
     case 5:
+        if (pmp_probe_state == 1 &&
+            csr_read(CSR_STVAL) == 0x80200000UL) {
+            pmp_probe_state = 2;
+            return;
+        }
         _puts("QS:TRUSTED_EXCEPTION:LOAD_ACCESS\n");
         break;
     case 7:
@@ -60,6 +51,13 @@ static void acceptance_task(void *arg)
     _puts("QS:TRUSTED_FIRST_TASK\n");
     vTaskDelay(pdMS_TO_TICKS(50));
     _puts("QS:TRUSTED_SCHED_OK\n");
+    pmp_probe_state = 1;
+    __asm volatile("lw zero, 0(%0)" ::
+                   "r"((uintptr_t)0x80200000UL) : "memory");
+    if (pmp_probe_state == 2)
+        _puts("QS:PMP_TRUSTED_DENY_OK\n");
+    else
+        _puts("QS:PMP_TRUSTED_DENY_FAIL\n");
     vTaskDelete(NULL);
 }
 
