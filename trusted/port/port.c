@@ -35,6 +35,7 @@
 #include "task.h"
 #include "portmacro.h"
 #include "sbi.h"
+#include "debug_log.h"
 
 /* Standard includes. */
 #include "string.h"
@@ -139,6 +140,7 @@ void vPortSetupTimerInterrupt( void )
 {
     ullNextTime = prvReadTime() + ( uint64_t ) uxTimerIncrementsForOneTick;
     vPortUpdateTimer();
+    _puts( "QS:TRUSTED_TIMER_ARMED\n" );
 }
 
 /*-----------------------------------------------------------*/
