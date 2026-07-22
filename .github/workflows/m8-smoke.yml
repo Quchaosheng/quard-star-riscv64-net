@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
       - name: Install build and TAP dependencies
         run: |
           sudo apt-get update
