@@ -22,6 +22,9 @@ grep -Fq 'sbi_set_timer' "$root/trusted/port/port.c"
 grep -Fq 'scause' "$root/trusted/port/portASM.S"
 grep -Fq 'sepc' "$root/trusted/port/portASM.S"
 grep -Fq 'sstatus' "$root/trusted/port/portASM.S"
+grep -Fq '#define portYIELD() __asm volatile( "ebreak" );' \
+  "$root/trusted/port/portmacro.h"
+grep -Fq 'li t0, 3' "$root/trusted/port/portASM.S"
 if grep -Eq '\b(mcause|mepc|mstatus|mtvec|mie|mhartid)\b' \
     "$root"/trusted/port/*; then
   echo 'FAIL: trusted port still uses machine-mode CSRs' >&2
