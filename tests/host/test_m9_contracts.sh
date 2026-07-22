@@ -14,4 +14,7 @@ grep -Fq 'uses: actions/cache@v4' "$smoke_workflow"
 grep -Fq 'uses: actions/upload-artifact@v4' "$smoke_workflow"
 grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
+grep -Fq 'docs/build-debug.md' "$root/README.md"
+grep -Fq 'docs/limitations.md' "$root/README.md"
+grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"
 echo 'PASS: M9 host CI and README contracts'
