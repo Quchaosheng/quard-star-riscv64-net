@@ -12,9 +12,11 @@ for hart in 1 2 3 4 5 6; do
   grep -Fq "cpu$hart: cpu@$hart" \
     "$root/platform/quard-star/dts/quard_star_kernel_m8.dts"
 done
-grep -Fq -- '-smp 8' "$root/scripts/m8-smoke.sh"
+grep -Fq 'QS_SMP=8' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:TRUSTED_READY' "$root/scripts/m8-smoke.sh"
 grep -Fq 'QS:HART_ONLINE:7' "$root/scripts/m8-smoke.sh"
+grep -Fq 'QS_M7E_TEST' "$root/scripts/m8-build.sh"
+grep -Fq 'QS:M7E_TFTP_1M_OK' "$root/scripts/m5-smoke.sh"
 grep -Fq 'rm -f "$root/out/m8/disk/disk.img"' "$root/scripts/m8-build.sh"
 grep -Fq 'QS:TEST_PASS:m8-smoke' "$root/kernel/src/selftest.c"
 echo 'PASS: M8 trusted-domain and seven-hart contracts'
