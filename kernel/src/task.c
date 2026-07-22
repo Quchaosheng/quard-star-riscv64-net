@@ -565,6 +565,8 @@ void exit_current_and_run_next(u64 exit_code)
     if (p->pid == 0)
         panic("init exiting");
 
+    file_close_owner(p->pid);
+
     struct semaphore *parent_exit = lock_parent_exit(p);
     p->exit_code = exit_code;
     p->task_state = Zombie;

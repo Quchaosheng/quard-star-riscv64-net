@@ -58,6 +58,17 @@ int main(void)
     }
     if (sys_close(fd) < 0)
         return -1;
+#ifdef QS_M7A_TEST
+    if (sys_exec("m7a_dns_echo") < 0) {
+        printf("QS:TEST_FAIL:m7a-exec\n");
+        return -1;
+    }
+#elif defined(QS_M6C1_TEST)
+    if (sys_exec("tcp_echo") < 0) {
+        printf("QS:TEST_FAIL:m6c1-exec\n");
+        return -1;
+    }
+#endif
     while (1)
         sys_yield();
 }

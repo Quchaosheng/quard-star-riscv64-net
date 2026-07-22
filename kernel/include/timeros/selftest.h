@@ -25,5 +25,19 @@ void m6_mark_arp_timer(void);
 void m6_mark_loop(void);
 void m6b_mark_udp(void);
 void m6b_mark_udp_timeout(void);
+void m6c1_mark_tcp(void);
+void m6c1_mark_tcp_retrans(void);
+void m6c1_mark_tcp_close(void);
+void m6c2_mark_tcp_listen(void);
+void m6c2_mark_tcp_accept(void);
+void m6c2_mark_tcp_echo_complete(void);
+void m6c2_mark_tcp_echo(void);
+void m6c2_mark_tcp_child_close(void);
+void m6c2_mark_tcp_listener_close(void);
+void m7a_mark_dns_complete(void);
+void m7b_mark_http_complete(void);
+void m7c_mark_ntp_complete(void);
+void m7d_mark_tftp_complete(void);
+void m7e_mark_file_complete(void);
 
 #endif

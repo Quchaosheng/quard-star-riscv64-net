@@ -60,13 +60,16 @@ NET_SRCS_C = \
 	net/icmpv4.c \
 	net/loop.c \
 	net/net_stack.c \
+	net/dns.c \
+	net/dns_resolver.c \
 	net/udp.c \
+	net/tcp.c \
 	net/net_exec.c \
 	net/socket.c \
 
 INCLUDE := -I./include -I./include/timeros/net -I../third_party/dtc/libfdt -I../platform/quard-star/include
 ifeq ($(FATFS),1)
-SRCS_C += fatfs_port.c fatfs_test.c
+SRCS_C += fatfs_port.c fatfs_test.c file.c
 INCLUDE += -I$(FATFS_DIR)
 endif
 

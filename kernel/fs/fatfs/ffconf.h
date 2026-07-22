@@ -7,7 +7,7 @@
 #define FF_USE_FIND         0
 #define FF_USE_MKFS         1
 #define FF_USE_FASTSEEK     0
-#define FF_USE_EXPAND       0
+#define FF_USE_EXPAND       1
 #define FF_USE_CHMOD        0
 #define FF_USE_LABEL        0
 #define FF_USE_FORWARD      0

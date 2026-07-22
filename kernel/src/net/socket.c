@@ -1,7 +1,14 @@
 #include <timeros/net/socket.h>
 
+#ifdef QS_M6C2_TEST
+#include <timeros/selftest.h>
+#endif
+
 typedef struct _socket_entry_t {
-    udp_pcb_t udp;
+    union {
+        udp_pcb_t udp;
+        tcp_pcb_t *tcp;
+    } pcb;
     uint32_t generation;
     int used;
     int closing;
@@ -11,6 +18,11 @@ typedef struct _socket_entry_t {
 
 static socket_entry_t entries[NET_SOCKET_MAX];
 static nlocker_t socket_locker;
+
+#ifdef SOCKET_TEST
+void net_socket_test_waiter_acquired_hook(void);
+void net_socket_test_waiter_unlocked_hook(void);
+#endif
 
 static int socket_decode(int handle, int *slot, uint32_t *generation)
 {
@@ -36,6 +48,70 @@ static socket_entry_t *socket_find(int handle)
            entry : 0;
 }
 
+static socket_entry_t *socket_find_used(int handle)
+{
+    int slot;
+    uint32_t generation;
+
+    if (socket_decode(handle, &slot, &generation) < 0)
+        return 0;
+    socket_entry_t *entry = &entries[slot];
+    return entry->used && entry->generation == generation ? entry : 0;
+}
+
+static void socket_invalidate(socket_entry_t *entry)
+{
+    if (entry->type == NET_SOCKET_TCP)
+        entry->pcb.tcp = 0;
+    entry->used = 0;
+    entry->closing = 0;
+    if (entry->generation == 0x7fffffU)
+        entry->retired = 1;
+    else
+        entry->generation++;
+}
+
+static void socket_accept_clear(net_socket_accept_t *accept)
+{
+    *accept = (net_socket_accept_t){ 0 };
+}
+
+static void socket_accept_abort_locked(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired)
+        return;
+    if (accept->child != 0)
+        (void)tcp_accept_release_child_acquired(accept->listener,
+                                                accept->child);
+    else
+        (void)tcp_accept_release_acquired(accept->listener);
+    socket_accept_clear(accept);
+}
+
+static net_err_t socket_close_tcp(socket_entry_t *entry)
+{
+    tcp_pcb_t *pcb = entry->pcb.tcp;
+
+    if (!entry->closing) {
+        entry->closing = 1;
+        net_err_t err = tcp_close(pcb);
+        if (err < 0)
+            entry->closing = 0;
+        return err < 0 ? err : NET_ERR_NONE;
+    }
+
+    net_err_t err = tcp_close(pcb);
+    if (err < 0)
+        return err;
+    err = tcp_socket_detach(pcb);
+    if (err == NET_ERR_STATE)
+        return NET_ERR_NONE;
+    if (err < 0)
+        return err;
+    socket_invalidate(entry);
+    return NET_ERR_OK;
+}
+
 net_err_t net_socket_init(void)
 {
     for (int i = 0; i < NET_SOCKET_MAX; i++) {
@@ -43,6 +119,7 @@ net_err_t net_socket_init(void)
         entries[i].closing = 0;
         entries[i].retired = 0;
         entries[i].generation = 1;
+        entries[i].pcb.tcp = 0;
     }
     nlocker_init(&socket_locker, NLOCKER_THREAD);
     return NET_ERR_OK;
@@ -50,59 +127,294 @@ net_err_t net_socket_init(void)
 
 int net_socket_open(int type)
 {
-    if (type != NET_SOCKET_UDP)
+    if (type != NET_SOCKET_UDP && type != NET_SOCKET_TCP)
         return NET_ERR_NOT_SUPPORT;
+    nlocker_lock(&socket_locker);
     for (int i = 0; i < NET_SOCKET_MAX; i++) {
         socket_entry_t *entry = &entries[i];
         if (!entry->used && !entry->retired) {
-            if (udp_open(&entry->udp) < 0)
-                return NET_ERR_MEM;
+            net_err_t err = type == NET_SOCKET_UDP ?
+                            udp_open(&entry->pcb.udp) :
+                            tcp_socket_open(&entry->pcb.tcp);
+            if (err < 0) {
+                nlocker_unlock(&socket_locker);
+                return err;
+            }
             entry->used = 1;
             entry->closing = 0;
             entry->type = type;
-            return ((int)entry->generation << 8) | i;
+            int handle = ((int)entry->generation << 8) | i;
+            nlocker_unlock(&socket_locker);
+            return handle;
         }
     }
+    nlocker_unlock(&socket_locker);
     return NET_ERR_FULL;
 }
 
-net_err_t net_socket_bind(int handle, uint16_t port)
+net_err_t net_socket_bind(int handle, netif_t *netif,
+                          const ipaddr_t *local, uint16_t port)
 {
+    nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0)
+    if (entry == 0) {
+        nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
-    return udp_bind(&entry->udp, port);
+    }
+    net_err_t err = entry->type == NET_SOCKET_UDP ?
+                    udp_bind(&entry->pcb.udp, port) :
+                    tcp_bind(entry->pcb.tcp, netif, local, port);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+net_err_t net_socket_listen(int handle, int backlog)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    net_err_t err = tcp_listen(entry->pcb.tcp, backlog);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+net_err_t net_socket_accept_prepare(int handle,
+                                    net_socket_accept_t *accept)
+{
+    if (accept == 0)
+        return NET_ERR_PARAM;
+    socket_accept_clear(accept);
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    tcp_pcb_t *listener = entry->pcb.tcp;
+    net_err_t err = tcp_accept_acquire(listener);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+    accept->listener_handle = handle;
+    accept->listener = listener;
+    accept->acquired = 1;
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
+    nlocker_unlock(&socket_locker);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    err = tcp_accept_peek_acquired(listener, &accept->child,
+                                   &accept->remote_ip,
+                                   &accept->remote_port, 0);
+    if (err < 0)
+        net_socket_accept_abort(accept);
+    return err;
+}
+
+int net_socket_accept_commit(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired || accept->listener == 0 ||
+        accept->child == 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&socket_locker);
+    socket_entry_t *listener_entry = socket_find(accept->listener_handle);
+    if (listener_entry == 0 || listener_entry->type != NET_SOCKET_TCP ||
+        listener_entry->pcb.tcp != accept->listener) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_STATE;
+    }
+
+    socket_entry_t *accepted_entry = 0;
+    int slot = -1;
+    for (int i = 0; i < NET_SOCKET_MAX; i++) {
+        if (!entries[i].used && !entries[i].retired) {
+            accepted_entry = &entries[i];
+            slot = i;
+            break;
+        }
+    }
+    if (accepted_entry == 0) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_FULL;
+    }
+
+    net_err_t err = tcp_accept_commit_acquired(accept->listener,
+                                                accept->child);
+    if (err < 0) {
+        socket_accept_abort_locked(accept);
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+    accepted_entry->pcb.tcp = accept->child;
+    accepted_entry->used = 1;
+    accepted_entry->closing = 0;
+    accepted_entry->type = NET_SOCKET_TCP;
+    int handle = ((int)accepted_entry->generation << 8) | slot;
+    socket_accept_clear(accept);
+    nlocker_unlock(&socket_locker);
+#ifdef QS_M6C2_TEST
+    m6c2_mark_tcp_accept();
+#endif
+    return handle;
+}
+
+void net_socket_accept_abort(net_socket_accept_t *accept)
+{
+    if (accept == 0 || !accept->acquired)
+        return;
+    nlocker_lock(&socket_locker);
+    socket_accept_abort_locked(accept);
+    nlocker_unlock(&socket_locker);
 }
 
 net_err_t net_socket_close(int handle)
 {
-    int slot;
-    uint32_t generation;
     nlocker_lock(&socket_locker);
-    socket_entry_t *entry = socket_find(handle);
+    socket_entry_t *entry = socket_find_used(handle);
 
-    if (entry == 0 || socket_decode(handle, &slot, &generation) < 0) {
+    if (entry == 0) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    if (entry->type == NET_SOCKET_TCP) {
+        net_err_t err = socket_close_tcp(entry);
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+    if (entry->closing) {
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
     entry->closing = 1;
     nlocker_unlock(&socket_locker);
-    net_err_t err = udp_close(&entry->udp);
+    net_err_t err = udp_close(&entry->pcb.udp);
     nlocker_lock(&socket_locker);
     if (err < 0) {
         entry->closing = 0;
         nlocker_unlock(&socket_locker);
         return err;
     }
-    entry->used = 0;
-    entry->closing = 0;
-    if (entry->generation == 0x7fffffU)
-        entry->retired = 1;
-    else
-        entry->generation++;
+    socket_invalidate(entry);
     nlocker_unlock(&socket_locker);
     return NET_ERR_OK;
+}
+
+net_err_t net_socket_connect_start(int handle, netif_t *netif,
+                                   const ipaddr_t *dest, uint16_t dest_port)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    net_err_t err = tcp_connect_start(entry->pcb.tcp, netif, dest,
+                                      dest_port);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+net_err_t net_socket_wait_connect(int handle, int timeout_ms)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    tcp_pcb_t *pcb = entry->pcb.tcp;
+    net_err_t err = tcp_wait_connect_acquire(pcb);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
+    nlocker_unlock(&socket_locker);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_wait_connect_acquired(pcb, timeout_ms);
+}
+
+net_err_t net_socket_send(int handle, const uint8_t *data, int size)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    net_err_t err = tcp_send_start(entry->pcb.tcp, data, size);
+    nlocker_unlock(&socket_locker);
+    return err;
+}
+
+int net_socket_recv(int handle, uint8_t *data, int size, int timeout_ms)
+{
+    if (data == 0 || size <= 0)
+        return NET_ERR_PARAM;
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find(handle);
+    if (entry == 0 || entry->type != NET_SOCKET_TCP) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    tcp_pcb_t *pcb = entry->pcb.tcp;
+    net_err_t err = tcp_recv_acquire(pcb);
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
+    nlocker_unlock(&socket_locker);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_recv_bytes_acquired(pcb, data, size, timeout_ms);
+}
+
+net_err_t net_socket_wait_close(int handle, int timeout_ms)
+{
+    nlocker_lock(&socket_locker);
+    socket_entry_t *entry = socket_find_used(handle);
+    if (entry == 0 || entry->type != NET_SOCKET_TCP || !entry->closing) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_PARAM;
+    }
+    tcp_pcb_t *pcb = entry->pcb.tcp;
+    net_err_t err = tcp_wait_close_acquire(pcb);
+    if (err == NET_ERR_PARAM) {
+        nlocker_unlock(&socket_locker);
+        return NET_ERR_OK;
+    }
+    if (err < 0) {
+        nlocker_unlock(&socket_locker);
+        return err;
+    }
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_acquired_hook();
+#endif
+    nlocker_unlock(&socket_locker);
+#ifdef SOCKET_TEST
+    net_socket_test_waiter_unlocked_hook();
+#endif
+    return tcp_wait_close_acquired(pcb, timeout_ms);
 }
 
 net_err_t net_socket_sendto(int handle, netif_t *netif,
@@ -111,9 +423,9 @@ net_err_t net_socket_sendto(int handle, netif_t *netif,
 {
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0)
+    if (entry == 0 || entry->type != NET_SOCKET_UDP)
         return NET_ERR_PARAM;
-    return udp_sendto(&entry->udp, netif, dest, dest_port, data, size);
+    return udp_sendto(&entry->pcb.udp, netif, dest, dest_port, data, size);
 }
 
 int net_socket_recvfrom(int handle, uint8_t *data, int size, ipaddr_t *src,
@@ -124,11 +436,12 @@ int net_socket_recvfrom(int handle, uint8_t *data, int size, ipaddr_t *src,
     nlocker_lock(&socket_locker);
     socket_entry_t *entry = socket_find(handle);
 
-    if (entry == 0 || udp_recv_acquire(&entry->udp) < 0) {
+    if (entry == 0 || entry->type != NET_SOCKET_UDP ||
+        udp_recv_acquire(&entry->pcb.udp) < 0) {
         nlocker_unlock(&socket_locker);
         return NET_ERR_PARAM;
     }
     nlocker_unlock(&socket_locker);
-    return udp_recvfrom_acquired(&entry->udp, data, size, src, src_port,
+    return udp_recvfrom_acquired(&entry->pcb.udp, data, size, src, src_port,
                                  timeout_ms);
 }

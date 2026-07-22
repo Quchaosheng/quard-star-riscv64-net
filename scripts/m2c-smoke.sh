@@ -11,6 +11,9 @@ kernel_log=$out/kernel.log
 qemu_log=$out/qemu.err
 combined=$out/qemu.log
 extra_markers=${QS_EXTRA_MARKERS:-}
+smp=${QS_SMP:-2}
+required_harts=${QS_REQUIRED_HARTS:-"0 1"}
+trusted_serial_log=${QS_TRUSTED_SERIAL_LOG:-}
 
 has_exact_marker() {
   tr -d '\000\r' < "$combined" | grep -Fxq "$1"
@@ -21,7 +24,6 @@ has_success_markers() {
     grep -q 'QS:KERNEL_READY' "$combined" 2>/dev/null &&
     grep -q 'QS:BLOCK_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:HART_ONLINE:0' "$combined" 2>/dev/null &&
-    grep -q 'QS:HART_ONLINE:1' "$combined" 2>/dev/null &&
     grep -q 'QS:SMP_ALLOC_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:SMP_SCHED_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:WAIT_OK' "$combined" 2>/dev/null &&
@@ -29,6 +31,9 @@ has_success_markers() {
     grep -q 'QS:IPI_OK' "$combined" 2>/dev/null &&
     grep -q 'QS:RFENCE_OK' "$combined" 2>/dev/null &&
     grep -q "QS:TEST_PASS:$test_name" "$combined" 2>/dev/null || return 1
+  for hart in $required_harts; do
+    grep -q "QS:HART_ONLINE:$hart" "$combined" 2>/dev/null || return 1
+  done
   for marker in $extra_markers; do
     has_exact_marker "$marker" || return 1
   done
@@ -43,7 +48,7 @@ done
 
 rm -f "$kernel_log" "$qemu_log" "$combined"
 set -- \
-  -M quard-star -m 1G -smp 2 -bios none \
+  -M quard-star -m 1G -smp "$smp" -bios none \
   -drive if=pflash,bus=0,unit=0,format=raw,file="$out/fw/fw.bin" \
   -drive file="$out/disk/disk.img",if=none,format=raw,id=x0 \
   -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
@@ -54,6 +59,10 @@ if [ -n "${QS_TAP_IFACE:-}" ]; then
     -global virtio-mmio.force-legacy=true \
     -netdev "tap,id=net0,ifname=$QS_TAP_IFACE,script=no,downscript=no" \
     -device 'virtio-net-device,netdev=net0,mac=52:54:00:12:34:56,bus=virtio-mmio-bus.1'
+fi
+if [ -n "$trusted_serial_log" ]; then
+  rm -f "$trusted_serial_log"
+  set -- "$@" -serial null -serial file:"$trusted_serial_log"
 fi
 
 pid=
@@ -123,12 +132,16 @@ if [ "$success" -ne 1 ]; then
     ;;
   esac
   for marker in QS:BOOT_OK QS:KERNEL_READY QS:BLOCK_OK \
-    QS:HART_ONLINE:0 QS:HART_ONLINE:1 QS:SMP_ALLOC_OK QS:SMP_SCHED_OK \
+    QS:SMP_ALLOC_OK QS:SMP_SCHED_OK \
     QS:WAIT_OK QS:SEM_TIMEOUT_OK QS:IPI_OK QS:RFENCE_OK \
     "QS:TEST_PASS:$test_name"
   do
     grep -q "$marker" "$combined" 2>/dev/null || \
       echo "error: missing $marker" >&2
+  done
+  for hart in $required_harts; do
+    grep -q "QS:HART_ONLINE:$hart" "$combined" 2>/dev/null || \
+      echo "error: missing QS:HART_ONLINE:$hart" >&2
   done
   for marker in $extra_markers; do
     has_exact_marker "$marker" || \

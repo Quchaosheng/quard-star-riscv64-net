@@ -13,7 +13,9 @@
 #define NETIF_OUTQ_SIZE 16
 #define TIMER_NAME_SIZE 32
 #define NET_TIME_TICKS_PER_MS 10000ULL
+#ifndef NET_STACK_RX_WAIT_MS
 #define NET_STACK_RX_WAIT_MS 5000
+#endif
 #ifndef ARP_CACHE_SIZE
 #define ARP_CACHE_SIZE 8
 #endif
