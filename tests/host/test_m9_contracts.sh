@@ -25,7 +25,7 @@ grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"
 grep -Fq 'docs/limitations.md' "$root/README.md"
-grep -Fq 'v0.9.0' "$root/README.md"
+grep -Fq 'current release line is `v1.0.0`' "$root/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
 grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
 grep -Fq 'QS:PMP_UNTRUSTED_DENY_OK' "$root/README.md"
@@ -33,6 +33,10 @@ grep -Fq 'QS:PMP_TRUSTED_DENY_OK' "$root/README.md"
 grep -Fq 'QEMU-only' "$root/docs/limitations.md"
 if grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"; then
   echo 'FAIL: limitations still describe the removed allmem boundary' >&2
+  exit 1
+fi
+if grep -Fq '`v1.0.0` is not published' "$root/README.md"; then
+  echo 'FAIL: README still describes v1.0.0 as unpublished' >&2
   exit 1
 fi
 if git -C "$root" ls-files '*.pcap' | grep -q .; then
