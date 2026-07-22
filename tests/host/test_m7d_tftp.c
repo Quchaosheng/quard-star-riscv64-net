@@ -6,6 +6,7 @@
 
 int tftp_rrq_encode(unsigned char *, int, const char *);
 int tftp_rrq_window_encode(unsigned char *, int, const char *, int);
+int tftp_oack_window_parse(const unsigned char *, int, int *);
 int tftp_data_parse(const unsigned char *, int, uint16_t,
                     const unsigned char **, int *);
 int tftp_ack_encode(unsigned char *, int, uint16_t);
@@ -21,6 +22,14 @@ int main(void)
     assert(memcmp(packet, "\0\1m7d.bin\0octet\0", 16) == 0);
     assert(tftp_rrq_window_encode(packet, sizeof(packet), "m7e.bin", 4) == 29);
     assert(memcmp(packet + 16, "windowsize\0" "4\0", 13) == 0);
+    assert(tftp_oack_window_parse((const unsigned char *)"\0\6windowsize\0" "4\0",
+                                 15, &data_length) == NET_ERR_OK);
+    assert(data_length == 4);
+    assert(tftp_oack_window_parse((const unsigned char *)"\0\6windowsize\0" "3\0",
+                                 15, &data_length) == NET_ERR_OK);
+    assert(data_length == 3);
+    assert(tftp_oack_window_parse((const unsigned char *)"\0\6windowsize\0" "0\0",
+                                 15, &data_length) == NET_ERR_FORMAT);
     assert(tftp_rrq_encode(packet, sizeof(packet), "../bad") ==
            NET_ERR_PARAM);
     packet[0] = 0;
