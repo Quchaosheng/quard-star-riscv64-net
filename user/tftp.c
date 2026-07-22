@@ -82,6 +82,34 @@ int tftp_ack_encode(unsigned char *packet, int capacity, uint16_t block)
     return 4;
 }
 
+int tftp_oack_window_parse(const unsigned char *packet, int length,
+                           int *window_size)
+{
+    static const char option[] = "windowsize";
+    int value = 0;
+
+    int option_length = (int)sizeof(option) - 1;
+    int value_start = 2 + option_length + 1;
+
+    if (packet == 0 || window_size == 0 || length < value_start + 2 ||
+        packet[0] != 0 || packet[1] != 6)
+        return NET_ERR_PARAM;
+    for (int index = 0; index < option_length; index++)
+        if (packet[2 + index] != (unsigned char)option[index])
+            return NET_ERR_FORMAT;
+    if (packet[2 + option_length] != 0) return NET_ERR_FORMAT;
+    for (int index = value_start; index < length - 1; index++) {
+        unsigned char digit = packet[index];
+        if (digit < '0' || digit > '9') return NET_ERR_FORMAT;
+        value = value * 10 + (digit - '0');
+        if (value > 65535) return NET_ERR_SIZE;
+    }
+    if (packet[length - 1] != 0 || value == 0)
+        return NET_ERR_FORMAT;
+    *window_size = value;
+    return NET_ERR_OK;
+}
+
 uint32_t tftp_checksum_update(uint32_t checksum, const unsigned char *data,
                               int length)
 {
