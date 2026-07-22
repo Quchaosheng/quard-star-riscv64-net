@@ -82,23 +82,51 @@ static u32 m6c2_stress_released;
 static u64 started_at;
 #ifdef QS_M9_PMP_TEST
 static volatile u32 pmp_probe_state;
+static reg_t pmp_probe_cause;
+static reg_t pmp_probe_resume;
+
+static void m9_pmp_arm(reg_t cause, void *resume)
+{
+    pmp_probe_cause = cause;
+    pmp_probe_resume = (reg_t)(uintptr_t)resume;
+    __atomic_store_n(&pmp_probe_state, 1, __ATOMIC_RELEASE);
+}
+
+static void m9_pmp_require(const char *marker)
+{
+    if (__atomic_load_n(&pmp_probe_state, __ATOMIC_ACQUIRE) != 2) {
+        printk("QS:PMP_UNTRUSTED_DENY_FAIL\n");
+        panic("trusted memory access was not denied");
+    }
+    printk("%s\n", marker);
+}
 
 static void m9_pmp_probe(void)
 {
-    pmp_probe_state = 1;
+    m9_pmp_arm(EXC_LOAD_ACCESS, &&resume_load);
     asm volatile("lw zero, 0(%0)" :: "r"((uintptr_t)PMP_PROBE_VA) : "memory");
-    if (pmp_probe_state != 2) {
-        printk("QS:PMP_UNTRUSTED_DENY_FAIL\n");
-        panic("trusted memory was readable");
-    }
+resume_load:
+    m9_pmp_require("QS:PMP_UNTRUSTED_LOAD_DENY_OK");
+
+    m9_pmp_arm(EXC_STORE_ACCESS, &&resume_store);
+    asm volatile("sw zero, 0(%0)" :: "r"((uintptr_t)PMP_PROBE_VA) : "memory");
+resume_store:
+    m9_pmp_require("QS:PMP_UNTRUSTED_STORE_DENY_OK");
+
+    m9_pmp_arm(EXC_INST_ACCESS, &&resume_exec);
+    asm volatile("jr %0" :: "r"((uintptr_t)PMP_PROBE_VA) : "memory");
+resume_exec:
+    m9_pmp_require("QS:PMP_UNTRUSTED_EXEC_DENY_OK");
     printk("QS:PMP_UNTRUSTED_DENY_OK\n");
 }
 
-int m9_pmp_handle_load_fault(reg_t stval)
+int m9_pmp_handle_fault(reg_t cause, reg_t stval, reg_t *resume_pc)
 {
-    if (pmp_probe_state != 1 || stval != PMP_PROBE_VA)
+    if (__atomic_load_n(&pmp_probe_state, __ATOMIC_ACQUIRE) != 1 ||
+        cause != pmp_probe_cause || stval != PMP_PROBE_VA)
         return 0;
-    pmp_probe_state = 2;
+    *resume_pc = pmp_probe_resume;
+    __atomic_store_n(&pmp_probe_state, 2, __ATOMIC_RELEASE);
     return 1;
 }
 #endif

@@ -40,7 +40,7 @@ void m7c_mark_ntp_complete(void);
 void m7d_mark_tftp_complete(void);
 void m7e_mark_file_complete(void);
 #ifdef QS_M9_PMP_TEST
-int m9_pmp_handle_load_fault(reg_t stval);
+int m9_pmp_handle_fault(reg_t cause, reg_t stval, reg_t *resume_pc);
 #endif
 
 #endif
