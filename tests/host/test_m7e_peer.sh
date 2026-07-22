@@ -10,6 +10,7 @@ spec.loader.exec_module(peer)
 assert len(peer.tftp_data(1, True)) == 516
 assert len(peer.tftp_data(2048, True)) == 516
 assert peer.tftp_data(2049, True) == b"\x00\x03\x08\x01"
+assert peer.tftp_oack() == b"\x00\x06windowsize\x004\x00"
 assert peer.tftp_data(1, True)[4:8] == bytes((0, 1, 2, 3))
 assert peer.tftp_data(2, True)[4:8] == bytes((0, 1, 2, 3))
 print("PASS: M7E 1 MiB TFTP peer data")
