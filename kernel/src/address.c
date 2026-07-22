@@ -500,6 +500,11 @@ PageTable kvmmake(void)
     PageTable_map(&pt, virt_addr_from_size_t(QEMU_TEST_BASE),
                     phys_addr_from_size_t(QEMU_TEST_BASE), PAGE_SIZE,
                     PTE_R | PTE_W);
+#ifdef QS_M9_PMP_TEST
+    PageTable_map(&pt, virt_addr_from_size_t(PMP_PROBE_VA),
+                    phys_addr_from_size_t(PMP_TRUSTED_BASE), PAGE_SIZE,
+                    PTE_R);
+#endif
 
     //allocate and map a kernel stack for each process.
     proc_mapstacks(&pt);

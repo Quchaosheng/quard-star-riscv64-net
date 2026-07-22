@@ -43,8 +43,8 @@
  *----------------------------------------------------------*/
 
 /* See https://www.freertos.org/Using-FreeRTOS-on-RISC-V.html */
-#define configMTIME_BASE_ADDRESS		( CLINT_ADDR + CLINT_MTIME )
-#define configMTIMECMP_BASE_ADDRESS		( CLINT_ADDR + CLINT_MTIMECMP )
+#define configMTIME_BASE_ADDRESS		( 0 )
+#define configMTIMECMP_BASE_ADDRESS		( 0 )
 
 #define configUSE_PREEMPTION			1                       // 任务抢占
 #define configUSE_IDLE_HOOK				0                       // IDLE 任务钩子函数

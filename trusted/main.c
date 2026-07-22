@@ -7,6 +7,60 @@
 //消息队列控制权柄
 QueueHandle_t xMyQueueHandle;
 
+static volatile uintptr_t pmp_probe_state;
+
+void freertos_risc_v_application_exception_handler(uintptr_t cause)
+{
+    switch (cause) {
+    case 1:
+        _puts("QS:TRUSTED_EXCEPTION:INSTRUCTION_ACCESS\n");
+        break;
+    case 2:
+        _puts("QS:TRUSTED_EXCEPTION:ILLEGAL_INSTRUCTION\n");
+        break;
+    case 5:
+        if (pmp_probe_state == 1 &&
+            csr_read(CSR_STVAL) == 0x80200000UL) {
+            pmp_probe_state = 2;
+            return;
+        }
+        _puts("QS:TRUSTED_EXCEPTION:LOAD_ACCESS\n");
+        break;
+    case 7:
+        _puts("QS:TRUSTED_EXCEPTION:STORE_ACCESS\n");
+        break;
+    default:
+        _puts("QS:TRUSTED_EXCEPTION:OTHER\n");
+        break;
+    }
+    for (;;)
+        __asm volatile("wfi");
+}
+
+void freertos_risc_v_application_interrupt_handler(uintptr_t cause)
+{
+    (void)cause;
+    _puts("QS:TRUSTED_INTERRUPT:UNEXPECTED\n");
+    for (;;)
+        __asm volatile("wfi");
+}
+
+static void acceptance_task(void *arg)
+{
+    (void)arg;
+    _puts("QS:TRUSTED_FIRST_TASK\n");
+    vTaskDelay(pdMS_TO_TICKS(50));
+    _puts("QS:TRUSTED_SCHED_OK\n");
+    pmp_probe_state = 1;
+    __asm volatile("lw zero, 0(%0)" ::
+                   "r"((uintptr_t)0x80200000UL) : "memory");
+    if (pmp_probe_state == 2)
+        _puts("QS:PMP_TRUSTED_DENY_OK\n");
+    else
+        _puts("QS:PMP_TRUSTED_DENY_FAIL\n");
+    vTaskDelete(NULL);
+}
+
 void task1(void *p_arg)
 {
     int time = 1;
@@ -51,6 +105,7 @@ void task3(void *p_arg)
 static void vTaskCreate ()
 {
 
+    xTaskCreate(acceptance_task,"accept",512,NULL,6,NULL);
     xTaskCreate(task1,"task1",1024,NULL,3,NULL);
     xTaskCreate(task2,"task2",1024,NULL,4,NULL);
     xTaskCreate(task3,"task2",1024,NULL,5,NULL);
