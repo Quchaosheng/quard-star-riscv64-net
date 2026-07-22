@@ -14,9 +14,9 @@ grep -Eq 'Domain1 Region[0-9]+ +: 0x00000000bf800000-0x00000000bfffffff \(\)' \
   "$root/out/m8/qemu.log"
 grep -Eq 'Domain2 Region[0-9]+ +: 0x00000000bf800000-0x00000000bfffffff \(R,W,X\)' \
   "$root/out/m8/qemu.log"
-grep -Eq 'Domain1 Region[0-9]+ +: 0x0000000010002000-0x0000000010002fff \(\)' \
+grep -Eq 'Domain1 Region[0-9]+ +: 0x0000000010002000-0x0000000010002fff \(I\)' \
   "$root/out/m8/qemu.log"
-grep -Eq 'Domain2 Region[0-9]+ +: 0x0000000010002000-0x0000000010002fff \(R,W\)' \
+grep -Eq 'Domain2 Region[0-9]+ +: 0x0000000010002000-0x0000000010002fff \(I,R,W\)' \
   "$root/out/m8/qemu.log"
 if grep -q 'QS:HART_ONLINE:7' "$root/out/m8/qemu.log" 2>/dev/null; then
   echo 'error: trusted hart7 entered the ordinary kernel' >&2
