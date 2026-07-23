@@ -114,20 +114,46 @@ expect_fail()
 
 printf '{\n' >"$tmp/bad.stats"
 sed '/QS:TEST_PASS:/d' "$tmp/m8.log" >"$tmp/no-pass.log"
+cp "$tmp/m8.log" "$tmp/failure.log"
+printf 'QS:TEST_FAIL:m8-smoke:injected\n' >>"$tmp/failure.log"
 printf '%s\n' \
     '{"elapsed_seconds":30.5,"tftp_bytes":1,"tftp_outstanding":0}' \
     >"$tmp/wrong-m8.stats"
+printf '%s\n' \
+    '{"elapsed_seconds":30.5,"elapsed_seconds":31.0,"tftp_bytes":1048576,"tftp_outstanding":0}' \
+    >"$tmp/duplicate.stats"
 sed 's/"tcp_server_stress_reconnects":100/"tcp_server_stress_reconnects":99/' \
     "$tmp/stress.stats" >"$tmp/wrong-stress.stats"
+sed 's/QS:STRESS_ALLOC_OPS:100000/QS:STRESS_ALLOC_OPS:99999/' \
+    "$tmp/stress.log" >"$tmp/wrong-workload.log"
+python3 - "$tmp/m8.log" "$tmp/non-ascii.log" <<'PY'
+import pathlib
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+digits = "".join(chr(0xff10 + int(value)) for value in "14000")
+pathlib.Path(sys.argv[2]).write_text(
+    text.replace("QS:STRESS_ALLOC_OPS:14000", "QS:STRESS_ALLOC_OPS:" + digits),
+    encoding="utf-8",
+)
+PY
 
 expect_fail m8 "$tmp/m8.log" "$tmp/bad.stats" \
     'invalid peer stats JSON'
 expect_fail m8 "$tmp/no-pass.log" "$tmp/m8.stats" \
     'missing pass marker'
+expect_fail m8 "$tmp/failure.log" "$tmp/m8.stats" \
+    'failure marker'
 expect_fail m8 "$tmp/m8.log" "$tmp/wrong-m8.stats" \
     'tftp_bytes must be 1048576'
+expect_fail m8 "$tmp/m8.log" "$tmp/duplicate.stats" \
+    'duplicate peer stats key'
 expect_fail m6c2-stress "$tmp/stress.log" "$tmp/wrong-stress.stats" \
     'tcp_server_stress_reconnects must be 100'
+expect_fail m6c2-stress "$tmp/wrong-workload.log" "$tmp/stress.stats" \
+    'allocation_operations must be 100000'
+expect_fail m8 "$tmp/non-ascii.log" "$tmp/m8.stats" \
+    'invalid allocation_operations counter'
 
 printf 'old-output\n' >"$tmp/same-output"
 if python3 "$root/scripts/perf-baseline.py" \
