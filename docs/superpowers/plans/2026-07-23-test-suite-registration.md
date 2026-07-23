@@ -21,10 +21,11 @@
 Add after the executable-mode loop in `test_m0_scripts.sh`:
 
 ```sh
+make -s -n -C "$root" test-host test-build > "$tmp/test-targets"
 git -C "$root" ls-files 'tests/host/test_*.sh' | while IFS= read -r test; do
   awk -v command="./$test" \
-    '$1 == command { found = 1 } END { exit !found }' "$root/Makefile" || \
-    fail "$test is not registered in Makefile"
+    '$1 == command { found = 1 } END { exit !found }' "$tmp/test-targets" || \
+    fail "$test is not reachable from test-host or test-build"
 done
 ```
 
@@ -37,7 +38,7 @@ Run:
 ```
 
 Expected: exit 1 naming `tests/host/test_m1_build_contracts.sh` or
-`tests/host/test_m3_contracts.sh` as unregistered.
+`tests/host/test_m3_contracts.sh` as unreachable.
 
 - [ ] **Step 3: Register the source-only and build-only tests**
 
@@ -91,15 +92,29 @@ Expected: the commit contains only the Makefile and M0 contract changes.
 Add after the existing M8 smoke command assertion:
 
 ```sh
-if ! grep -Eq '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
-  "$smoke_workflow"; then
-  echo 'FAIL: M8 CI must run build contracts' >&2
+job_count=$(grep -Fc '  qemu-smoke:' "$smoke_workflow" || true)
+if [ "$job_count" -ne 1 ]; then
+  echo 'FAIL: M8 CI must define exactly one qemu-smoke job' >&2
+  exit 1
+fi
+smoke_job=$tmp/qemu-smoke.yml
+awk '
+  $0 == "  qemu-smoke:" { found = 1 }
+  found && /^  [[:alnum:]_-]+:$/ && $0 != "  qemu-smoke:" { exit }
+  found { print }
+' "$smoke_workflow" > "$smoke_job"
+smoke_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+  "$smoke_job" || true)
+build_test_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
+  "$smoke_job" || true)
+if [ "$smoke_count" -ne 1 ] || [ "$build_test_count" -ne 1 ]; then
+  echo 'FAIL: qemu-smoke must run smoke and build contracts exactly once' >&2
   exit 1
 fi
 smoke_line=$(grep -En '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
-  "$smoke_workflow" | cut -d: -f1)
+  "$smoke_job" | cut -d: -f1)
 build_test_line=$(grep -En '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
-  "$smoke_workflow" | cut -d: -f1)
+  "$smoke_job" | cut -d: -f1)
 if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
    [ "$smoke_line" -ge "$build_test_line" ]; then
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
@@ -115,7 +130,8 @@ Run:
 ./tests/host/test_m9_contracts.sh
 ```
 
-Expected: exit 1 with `FAIL: M8 CI must run build contracts`.
+Expected: exit 1 with
+`FAIL: qemu-smoke must run smoke and build contracts exactly once`.
 
 - [ ] **Step 3: Add the post-smoke build-contract step**
 

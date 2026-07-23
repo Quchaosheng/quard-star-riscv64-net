@@ -31,13 +31,14 @@ the default `FATFS=0` kernel no longer references an omitted implementation.
 
 ## Registration Contract
 
-The M0 script behavior test will enumerate tracked `tests/host/test_*.sh`
-files and require every script name to appear in a Makefile command. This
-checks registration without assuming that every script belongs to
-`test-host`.
+The M0 script behavior test will dry-run `test-host` and `test-build`, then
+require every tracked `tests/host/test_*.sh` command to appear in that output.
+This proves each script is reachable from a CI entry target without assuming
+that every script belongs to `test-host`.
 
-The M9 workflow contract will require `make test-build` in `m8-smoke.yml` and
-will verify that `sudo -E make m8-smoke` appears before it. Existing checks for
+The M9 workflow contract will extract the single `qemu-smoke` job, require the
+smoke and build-contract commands exactly once within that job, and verify that
+`sudo -E make m8-smoke` appears before `make test-build`. Existing checks for
 the M8 build, smoke, cache, and artifacts remain unchanged.
 
 ## Verification
