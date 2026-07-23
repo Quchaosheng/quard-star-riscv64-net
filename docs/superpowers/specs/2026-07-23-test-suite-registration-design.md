@@ -23,6 +23,12 @@ passes. Running it afterward prevents the build contract's clean rebuild from
 changing firmware before M8 acceptance. The M8 job already initializes the
 locked submodules and produces the trusted firmware ELF required by the test.
 
+Registering the build contract exposed a latent default-build defect:
+`task.c` referenced M7E file-handle cleanup even when the M7E file subsystem
+was not compiled. The cleanup call will use the same `QS_M7E_TEST` feature gate
+as file initialization and file syscalls. M7E and M8 keep process-exit cleanup;
+the default `FATFS=0` kernel no longer references an omitted implementation.
+
 ## Registration Contract
 
 The M0 script behavior test will enumerate tracked `tests/host/test_*.sh`
@@ -46,11 +52,15 @@ the M8 build, smoke, cache, and artifacts remain unchanged.
 5. Run `make test-host` in a no-submodule clone.
 6. Run `make test-build` in the prepared worktree containing complete M8 build
    artifacts.
-7. Run `git diff --check` and the complete host suite.
+7. Verify the default build fails before the M7E cleanup gate is restored and
+   passes afterward; run focused M7E and M8 contracts.
+8. Run `git diff --check` and the complete host suite.
 
 ## Boundaries
 
-- No kernel, protocol, platform, or third-party source changes.
+- The only kernel change restores the existing M7E feature gate around
+  process-exit file cleanup. Protocol, platform, and third-party sources remain
+  unchanged.
 - Push and pull-request host CI remains independent of submodule downloads.
 - The build contract runs with weekly or manually dispatched M8 acceptance;
   it is not described as per-commit evidence.

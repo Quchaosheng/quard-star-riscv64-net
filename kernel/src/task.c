@@ -565,7 +565,9 @@ void exit_current_and_run_next(u64 exit_code)
     if (p->pid == 0)
         panic("init exiting");
 
+#ifdef QS_M7E_TEST
     file_close_owner(p->pid);
+#endif
 
     struct semaphore *parent_exit = lock_parent_exit(p);
     p->exit_code = exit_code;

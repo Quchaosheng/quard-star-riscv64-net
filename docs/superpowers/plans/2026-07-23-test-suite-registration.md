@@ -148,7 +148,60 @@ git commit -m "ci: run build contracts after m8 smoke"
 
 Expected: the commit contains only the M8 workflow and M9 contract changes.
 
-### Task 3: Verify both dependency environments
+### Task 3: Restore the default kernel build boundary
+
+**Files:**
+- Modify: `kernel/src/task.c`
+- Modify: `docs/superpowers/specs/2026-07-23-test-suite-registration-design.md`
+- Modify: `docs/superpowers/plans/2026-07-23-test-suite-registration.md`
+
+- [ ] **Step 1: Reproduce the default-build failure**
+
+Run `make test-build` with complete submodules and the existing trusted ELF.
+
+Expected: the default `FATFS=0` link fails with `undefined reference to
+file_close_owner`.
+
+- [ ] **Step 2: Restore the existing M7E feature boundary**
+
+Change the exit cleanup in `kernel/src/task.c` to:
+
+```c
+#ifdef QS_M7E_TEST
+    file_close_owner(p->pid);
+#endif
+```
+
+- [ ] **Step 3: Verify the default build and M7E contracts**
+
+Run:
+
+```sh
+make test-build
+./tests/host/test_m7e_file.sh
+./tests/host/test_m7e_contracts.sh
+./tests/host/test_m8_contracts.sh
+```
+
+Expected: the build prints `PASS: M1 build contracts`; all three focused host
+tests pass.
+
+- [ ] **Step 4: Commit the feature-gate repair**
+
+Run:
+
+```sh
+git diff --check
+git add kernel/src/task.c \
+  docs/superpowers/specs/2026-07-23-test-suite-registration-design.md \
+  docs/superpowers/plans/2026-07-23-test-suite-registration.md
+git commit -m "fix: guard m7e file cleanup"
+```
+
+Expected: the commit contains the one kernel feature gate and the matching
+design and plan corrections.
+
+### Task 4: Verify both dependency environments
 
 **Files:**
 - Verify only; no tracked file changes
