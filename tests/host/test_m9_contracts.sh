@@ -5,7 +5,10 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 workflow=$root/.github/workflows/host-tests.yml
 smoke_workflow=$root/.github/workflows/m8-smoke.yml
 grep -Fq 'runs-on: ubuntu-24.04' "$workflow"
-grep -Fq 'submodules: true' "$workflow"
+if grep -Fq 'submodules:' "$workflow"; then
+  echo 'FAIL: host CI must not fetch build-only submodules' >&2
+  exit 1
+fi
 grep -Fq 'submodules: true' "$smoke_workflow"
 if grep -Fq 'submodules: recursive' "$workflow" "$smoke_workflow"; then
   echo 'FAIL: CI must initialize only direct project submodules' >&2
