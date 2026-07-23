@@ -60,7 +60,14 @@ def load_peer_stats(path):
     return peer
 
 
-def parse_guest_log(path):
+def stage_pass_marker(stage):
+    return {
+        "m8": "QS:TEST_PASS:m8-smoke",
+        "m6c2-stress": "QS:TEST_PASS:m6c2-stress",
+    }.get(stage)
+
+
+def parse_guest_log(path, stage):
     found = {name: [] for name in COUNTERS.values()}
     pass_markers = []
     for line in read_text(path, "QEMU log").splitlines():
@@ -82,10 +89,14 @@ def parse_guest_log(path):
         guest[name] = values[0]
     if guest["elapsed_ticks"] <= 0:
         raise BaselineError("elapsed_ticks must be positive")
+    expected_marker = stage_pass_marker(stage)
+    if expected_marker is not None:
+        pass_markers = [marker for marker in pass_markers
+                        if marker == expected_marker]
     if not pass_markers:
         raise BaselineError("missing pass marker")
     if len(pass_markers) != 1:
-        raise BaselineError("multiple pass markers")
+        raise BaselineError("duplicate pass marker")
     guest["pass_marker"] = pass_markers[0]
     return guest
 
@@ -140,7 +151,7 @@ def resolve_commit(explicit):
 
 
 def build_report(args):
-    guest = parse_guest_log(args.qemu_log)
+    guest = parse_guest_log(args.qemu_log, args.stage)
     peer = load_peer_stats(args.peer_stats)
     validate(args.stage, guest, peer)
     derived = {}
