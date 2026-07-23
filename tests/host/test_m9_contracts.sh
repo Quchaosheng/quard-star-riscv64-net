@@ -55,8 +55,18 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
   exit 1
 fi
-grep -Fq 'uses: actions/cache@v4' "$smoke_workflow"
-grep -Fq 'uses: actions/upload-artifact@v4' "$smoke_workflow"
+cache_refs=$(grep -Eo 'actions/cache@[[:alnum:]._-]+' "$smoke_job" | wc -l)
+cache_v6_refs=$(grep -Eo 'actions/cache@v6([[:space:]]|$)' "$smoke_job" | wc -l)
+upload_refs=$(grep -Eo 'actions/upload-artifact@[[:alnum:]._-]+' "$smoke_job" | wc -l)
+upload_v7_refs=$(grep -Eo 'actions/upload-artifact@v7([[:space:]]|$)' "$smoke_job" | wc -l)
+if [ "$cache_refs" -ne 1 ] || [ "$cache_v6_refs" -ne 1 ] ||
+   [ "$upload_refs" -ne 1 ] || [ "$upload_v7_refs" -ne 1 ] ||
+   ! grep -Eq '^      - uses: actions/cache@v6[[:space:]]*$' "$smoke_job" ||
+   ! grep -Eq '^        uses: actions/upload-artifact@v7[[:space:]]*$' "$smoke_job" ||
+   grep -Eiq '^[[:space:]]+if:[[:space:]]*(false|\$\{\{[[:space:]]*false[[:space:]]*\}\})[[:space:]]*(#.*)?$' "$smoke_job"; then
+  echo 'FAIL: qemu-smoke must use Node.js 24 cache and upload actions exactly once' >&2
+  exit 1
+fi
 grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"
