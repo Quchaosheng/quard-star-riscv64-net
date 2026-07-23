@@ -25,6 +25,20 @@ grep -Fq 'workflow_dispatch:' "$smoke_workflow"
 grep -Fq 'run: ./scripts/prepare-fatfs.sh' "$smoke_workflow"
 grep -Fq 'run: make m8-build' "$smoke_workflow"
 grep -Fq 'run: sudo -E make m8-smoke' "$smoke_workflow"
+if ! grep -Eq '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
+  "$smoke_workflow"; then
+  echo 'FAIL: M8 CI must run build contracts' >&2
+  exit 1
+fi
+smoke_line=$(grep -En '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+  "$smoke_workflow" | cut -d: -f1)
+build_test_line=$(grep -En '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
+  "$smoke_workflow" | cut -d: -f1)
+if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
+   [ "$smoke_line" -ge "$build_test_line" ]; then
+  echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
+  exit 1
+fi
 grep -Fq 'uses: actions/cache@v4' "$smoke_workflow"
 grep -Fq 'uses: actions/upload-artifact@v4' "$smoke_workflow"
 grep -Fq 'make m8-build' "$root/README.md"
