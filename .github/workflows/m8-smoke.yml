@@ -35,6 +35,8 @@ jobs:
         run: make m8-build
       - name: Run M8 QEMU/TAP smoke
         run: sudo -E make m8-smoke
+      - name: Run build contracts
+        run: make test-build
       - name: Upload serial logs
         if: always()
         uses: actions/upload-artifact@v4
