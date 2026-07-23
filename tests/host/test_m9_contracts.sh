@@ -55,8 +55,23 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
   exit 1
 fi
-grep -Fq 'uses: actions/cache@v6' "$smoke_workflow"
-grep -Fq 'uses: actions/upload-artifact@v7' "$smoke_workflow"
+cache_count=$(grep -Ec \
+  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/cache@v6[[:space:]]*$' \
+  "$smoke_job" || true)
+cache_total=$(grep -Ec \
+  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/cache@[^[:space:]]+[[:space:]]*$' \
+  "$smoke_job" || true)
+upload_count=$(grep -Ec \
+  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/upload-artifact@v7[[:space:]]*$' \
+  "$smoke_job" || true)
+upload_total=$(grep -Ec \
+  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/upload-artifact@[^[:space:]]+[[:space:]]*$' \
+  "$smoke_job" || true)
+if [ "$cache_count" -ne 1 ] || [ "$cache_total" -ne 1 ] ||
+   [ "$upload_count" -ne 1 ] || [ "$upload_total" -ne 1 ]; then
+  echo 'FAIL: qemu-smoke must use Node.js 24 cache and upload actions exactly once' >&2
+  exit 1
+fi
 grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"
