@@ -31,6 +31,8 @@ grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
 grep -Fq 'QS:PMP_UNTRUSTED_DENY_OK' "$root/README.md"
 grep -Fq 'QS:PMP_TRUSTED_DENY_OK' "$root/README.md"
 grep -Fq 'QEMU-only' "$root/docs/limitations.md"
+grep -Fq 'load, store, and instruction access faults' \
+  "$root/docs/limitations.md"
 if grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"; then
   echo 'FAIL: limitations still describe the removed allmem boundary' >&2
   exit 1
