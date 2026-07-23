@@ -31,6 +31,11 @@ python3 scripts/perf-baseline.py \
   --markdown-out out/performance/m8.md
 ```
 
+`m8-smoke.sh` modifies its generated FatFs image. Re-run `make m8-build` before
+every M8 sample so that each measurement starts from a newly generated disk.
+Reusing `out/m8/disk/disk.img` across samples does not produce a comparable
+sample for this fresh-disk baseline.
+
 When running inside a Windows-created Git worktree from WSL2, use
 `git.exe rev-parse HEAD | tr -d '\r'` to obtain the commit because the worktree
 metadata contains a Windows path.
@@ -94,3 +99,41 @@ The M8 integrated interval derives 34926.31 TFTP payload bytes per second. It
 includes boot and the other acceptance operations, so it must not be presented
 as isolated network throughput. Earlier local artifacts remain acceptance
 evidence but are not attributed to a commit after the fact.
+
+## Repeatability Observation
+
+Three fresh samples per workload were captured on 2026-07-23 on the same WSL2
+Ubuntu 24.04 and Windows 11 host at commit
+`080a9dd40de6a8ff1aae66bfa80a8bb315e39f6d`. These measurements characterize
+the current baseline; they do not demonstrate an optimization.
+
+The host description and fresh-disk procedure are operator-recorded run
+metadata. The current JSON schema validates the commit, workload counters, pass
+marker, and elapsed values, but does not encode or independently verify the
+host identity, QEMU binary hash, build command, or initial disk hash. The
+reporter records a syntactically validated commit identifier; it does not prove
+that the supplied logs were produced by that commit.
+
+| Stage | Sample | Guest elapsed ticks | Host elapsed seconds |
+|---|---:|---:|---:|
+| M8 | 1 | 248036291 | 31.84657113899999 |
+| M8 | 2 | 258244754 | 29.602071138 |
+| M8 | 3 | 254639209 | 28.443526686 |
+| M6C2 stress | 1 | 3229017703 | 249.91188124800001 |
+| M6C2 stress | 2 | 3222401076 | 249.816960978 |
+| M6C2 stress | 3 | 3220955776 | 247.64832866899997 |
+
+Relative spread is `(maximum - minimum) / median * 100`.
+
+| Stage | Metric | Minimum | Median | Maximum | Relative spread |
+|---|---|---:|---:|---:|---:|
+| M8 | Guest elapsed ticks | 248036291 | 254639209 | 258244754 | 4.009% |
+| M8 | Host elapsed seconds | 28.443526686 | 29.602071138 | 31.84657113899999 | 11.496% |
+| M6C2 stress | Guest elapsed ticks | 3220955776 | 3222401076 | 3229017703 | 0.250% |
+| M6C2 stress | Host elapsed seconds | 247.64832866899997 | 249.816960978 | 249.91188124800001 | 0.906% |
+
+According to the recorded run procedure, every included M8 sample rebuilt the
+generated disk before the smoke run. An earlier attempt reused the disk from
+the preceding sample and failed the M7E TFTP RRQ acceptance check. That attempt
+is not comparable with this fresh-disk baseline and is excluded from the
+performance samples above.
