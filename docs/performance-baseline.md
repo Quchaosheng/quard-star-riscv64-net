@@ -13,6 +13,10 @@ storage and network application chain, transfers a 1 MiB file over TFTP, and
 checks bidirectional PMP denial. Its peer elapsed time covers the integrated
 acceptance path rather than one isolated protocol operation.
 
+The reporter validates the ordinary QEMU log and TAP-peer counters. It does not
+read `trusted.log`; trusted scheduling and trusted-side PMP markers remain the
+responsibility of the complete `m8-smoke.sh` acceptance check.
+
 ```sh
 ./scripts/prepare-fatfs.sh
 make m8-build
@@ -83,7 +87,7 @@ sample cannot demonstrate an optimization.
 
 | Stage | Commit | Guest elapsed ticks | Host elapsed seconds | Stage evidence |
 |---|---|---:|---:|---|
-| M8 | `7eeadb1e9689732d96a3474089966b1041559ae0` | 264957814 | 30.02252233500002 | 1 MiB TFTP, SHA-256, DNS/HTTP/NTP, seven ordinary harts, trusted scheduler and bidirectional PMP passed |
+| M8 | `7eeadb1e9689732d96a3474089966b1041559ae0` | 264957814 | 30.02252233500002 | Reporter validated 14000 allocations, 100 migrations, 1 MiB TFTP and zero outstanding TFTP packets; the complete smoke separately passed trusted/PMP checks |
 | M6C2 stress | `cfb695f6a4940769d01ae1c7e331c71fd530610a` | 3225305239 | 245.72794389 | 100000 allocations, 10000 migrations, 108 TCP exchanges, peak 8, 100 reconnects, zero live/outstanding connections |
 
 The M8 integrated interval derives 34926.31 TFTP payload bytes per second. It
