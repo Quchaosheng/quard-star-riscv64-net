@@ -25,6 +25,19 @@ grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"
 grep -Fq 'docs/limitations.md' "$root/README.md"
+grep -Fq 'The original source repositories are no longer publicly available' \
+  "$root/docs/source-migration.md"
+grep -Fq '641f42560999ab00ad7ba01169cb2b3d723d8c48' \
+  "$root/docs/source-migration.md"
+grep -Fq '32e4988e2d482ad3ee406e36b5adbd84a63c8e9e' \
+  "$root/docs/source-migration.md"
+if grep -Fq 'https://github.com/Quchaosheng/tiny-tcpip-stack' \
+    "$root/docs/source-migration.md" ||
+   grep -Fq 'https://github.com/Quchaosheng/quard-star-riscv64-kernel' \
+    "$root/docs/source-migration.md"; then
+  echo 'FAIL: source migration links to unavailable repositories' >&2
+  exit 1
+fi
 grep -Fq 'current release line is `v1.0.0`' "$root/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
 grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
