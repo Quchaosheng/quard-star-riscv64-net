@@ -129,6 +129,20 @@ expect_fail m8 "$tmp/m8.log" "$tmp/wrong-m8.stats" \
 expect_fail m6c2-stress "$tmp/stress.log" "$tmp/wrong-stress.stats" \
     'tcp_server_stress_reconnects must be 100'
 
+printf 'old-output\n' >"$tmp/same-output"
+if python3 "$root/scripts/perf-baseline.py" \
+    --stage m8 \
+    --qemu-log "$tmp/m8.log" \
+    --peer-stats "$tmp/m8.stats" \
+    --json-out "$tmp/same-output" \
+    --markdown-out "$tmp/same-output" 2>"$tmp/error"; then
+    fail "identical output paths passed"
+fi
+grep -Fq 'output paths must be different' "$tmp/error" || \
+    fail "missing identical-output error"
+[ "$(cat "$tmp/same-output")" = old-output ] || \
+    fail "identical output path was replaced"
+
 mkdir "$tmp/bin"
 cat >"$tmp/bin/python3" <<'EOF'
 #!/bin/sh
