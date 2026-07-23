@@ -45,8 +45,18 @@ def read_text(path, description):
 
 
 def load_peer_stats(path):
+    def unique_object(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise BaselineError(f"duplicate peer stats key: {name}")
+            result[name] = value
+        return result
+
     try:
-        peer = json.loads(read_text(path, "peer stats"))
+        peer = json.loads(
+            read_text(path, "peer stats"), object_pairs_hook=unique_object
+        )
     except json.JSONDecodeError as error:
         raise BaselineError(f"invalid peer stats JSON: {error.msg}") from error
     if not isinstance(peer, dict):
@@ -71,10 +81,12 @@ def parse_guest_log(path, stage):
     found = {name: [] for name in COUNTERS.values()}
     pass_markers = []
     for line in read_text(path, "QEMU log").splitlines():
+        if line.startswith("QS:TEST_FAIL"):
+            raise BaselineError(f"QEMU log contains failure marker: {line}")
         for prefix, name in COUNTERS.items():
             if line.startswith(prefix):
                 value = line[len(prefix):]
-                if not value.isdecimal():
+                if re.fullmatch(r"[0-9]+", value) is None:
                     raise BaselineError(f"invalid {name} counter")
                 found[name].append(int(value))
         if line.startswith("QS:TEST_PASS:"):
@@ -115,10 +127,14 @@ def validate(stage, guest, peer):
 
     if stage == "m8":
         require_value(guest, "pass_marker", "QS:TEST_PASS:m8-smoke")
+        require_value(guest, "allocation_operations", 14000)
+        require_value(guest, "migrations", 100)
         require_value(peer, "tftp_bytes", 1048576)
         require_value(peer, "tftp_outstanding", 0)
     elif stage == "m6c2-stress":
         require_value(guest, "pass_marker", "QS:TEST_PASS:m6c2-stress")
+        require_value(guest, "allocation_operations", 100000)
+        require_value(guest, "migrations", 10000)
         expected = {
             "tcp_server_stress_handshakes": 108,
             "tcp_server_stress_echo": 108,

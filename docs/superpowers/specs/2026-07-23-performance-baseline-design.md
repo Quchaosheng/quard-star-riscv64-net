@@ -62,14 +62,17 @@ Unknown peer counters are preserved so the reporter does not need a code
 change each time the peer adds evidence. Required fields remain stage-specific:
 
 - every report requires `elapsed_seconds`, a positive guest elapsed tick count,
-  and a `QS:TEST_PASS:` marker;
-- `m8` requires exactly 1 MiB of TFTP bytes and zero TFTP outstanding packets;
-- `m6c2-stress` requires 108 handshakes/echoes/FINs, peak parallelism 8,
-  100 reconnects, and zero outstanding/live connections.
+  its stage-specific `QS:TEST_PASS:` marker, and no `QS:TEST_FAIL` marker;
+- `m8` requires 14000 allocation operations, 100 migrations, exactly 1 MiB of
+  TFTP bytes, and zero TFTP outstanding packets;
+- `m6c2-stress` requires 100000 allocation operations, 10000 migrations, 108
+  handshakes/echoes/FINs, peak parallelism 8, 100 reconnects, and zero
+  outstanding/live connections.
 
 ## Validation And Errors
 
-Malformed JSON, non-numeric counters, missing files, absent pass markers,
+Malformed or duplicate-key JSON, non-ASCII/non-numeric counters, missing files,
+absent pass markers, explicit failure markers,
 non-positive elapsed values, or stage-specific counter mismatches cause a
 nonzero exit with one concise error on stderr. The tool never silently emits a
 partial report.
