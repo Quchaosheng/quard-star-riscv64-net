@@ -55,8 +55,8 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
   exit 1
 fi
-grep -Fq 'uses: actions/cache@v4' "$smoke_workflow"
-grep -Fq 'uses: actions/upload-artifact@v4' "$smoke_workflow"
+grep -Fq 'uses: actions/cache@v6' "$smoke_workflow"
+grep -Fq 'uses: actions/upload-artifact@v7' "$smoke_workflow"
 grep -Fq 'make m8-build' "$root/README.md"
 grep -Fq 'make m8-smoke' "$root/README.md"
 grep -Fq 'docs/build-debug.md' "$root/README.md"

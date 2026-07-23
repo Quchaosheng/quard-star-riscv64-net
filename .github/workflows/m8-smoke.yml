@@ -25,7 +25,7 @@ jobs:
             device-tree-compiler libfdt-dev python3 \
             libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
             flex bison bc iproute2 tcpdump curl
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/quard-star-riscv64-net
           key: m8-${{ runner.os }}-${{ hashFiles('patches/**', '.gitmodules') }}
@@ -39,7 +39,7 @@ jobs:
         run: make test-build
       - name: Upload serial logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: m8-serial-logs
           path: |
