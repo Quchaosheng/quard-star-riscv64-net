@@ -10,7 +10,7 @@ third-party trees.
 
 ## Design
 
-The daily `host-tests` workflow will use the default `actions/checkout@v5`
+The `host-tests` workflow will use the default `actions/checkout@v5`
 behavior and leave submodules uninitialized. The M8 workflow will continue to
 initialize direct submodules because it builds QEMU, OpenSBI, FreeRTOS, and the
 kernel firmware.

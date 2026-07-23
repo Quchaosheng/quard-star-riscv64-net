@@ -28,11 +28,14 @@ grep -Fq 'submodules: true' "$smoke_workflow"
 with:
 
 ```sh
-if grep -Fq 'submodules:' "$workflow"; then
+if grep -Eq '^[[:space:]]+submodules:' "$workflow" ||
+   grep -Eq '^[[:space:]]*(run:[[:space:]]*)?git[[:space:]]+submodule([[:space:]]|$)' \
+     "$workflow"; then
   echo 'FAIL: host CI must not fetch build-only submodules' >&2
   exit 1
 fi
-grep -Fq 'submodules: true' "$smoke_workflow"
+grep -Eq '^[[:space:]]+submodules:[[:space:]]+true[[:space:]]*$' \
+  "$smoke_workflow"
 ```
 
 - [ ] **Step 2: Run the focused contract and verify RED**
