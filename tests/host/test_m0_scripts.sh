@@ -15,6 +15,12 @@ git -C "$root" grep -Il '^#!' -- scripts tests/host | while IFS= read -r path; d
   [ "$mode" = 100755 ] || fail "$path must be executable in Git"
 done
 
+git -C "$root" ls-files 'tests/host/test_*.sh' | while IFS= read -r test; do
+  awk -v command="./$test" \
+    '$1 == command { found = 1 } END { exit !found }' "$root/Makefile" || \
+    fail "$test is not registered in Makefile"
+done
+
 mkdir -p "$tmp/bin"
 cat > "$tmp/os-release" <<'EOF'
 ID=ubuntu
