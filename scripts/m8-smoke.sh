@@ -9,7 +9,13 @@ export QS_EXTRA_MARKERS="QS:HART_ONLINE:0 QS:HART_ONLINE:1 QS:HART_ONLINE:2 QS:H
 grep -q 'QS:TRUSTED_READY' "$QS_TRUSTED_SERIAL_LOG"
 grep -q 'QS:TRUSTED_SCHED_OK' "$QS_TRUSTED_SERIAL_LOG"
 grep -q 'QS:PMP_UNTRUSTED_DENY_OK' "$root/out/m8/qemu.log"
+for access in LOAD STORE EXEC; do
+  grep -q "QS:PMP_UNTRUSTED_${access}_DENY_OK" "$root/out/m8/qemu.log"
+done
 grep -q 'QS:PMP_TRUSTED_DENY_OK' "$QS_TRUSTED_SERIAL_LOG"
+for access in LOAD STORE EXEC; do
+  grep -q "QS:PMP_TRUSTED_${access}_DENY_OK" "$QS_TRUSTED_SERIAL_LOG"
+done
 grep -Eq 'Domain1 Region[0-9]+ +: 0x00000000bf800000-0x00000000bfffffff \(\)' \
   "$root/out/m8/qemu.log"
 grep -Eq 'Domain2 Region[0-9]+ +: 0x00000000bf800000-0x00000000bfffffff \(R,W,X\)' \
