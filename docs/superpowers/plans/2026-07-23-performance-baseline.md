@@ -183,9 +183,10 @@ counters, and preserve all valid numeric keys.
 
 - [ ] **Step 2: Parse and validate guest evidence**
 
-Scan complete log lines. Require each counter exactly once, parse unsigned base
-10 integers, and require exactly one `QS:TEST_PASS:<name>` marker. Reject zero
-elapsed ticks. Build:
+Scan complete log lines. Require each counter exactly once and parse unsigned
+base 10 integers. Require the selected stage's final `QS:TEST_PASS:<name>`
+marker exactly once while allowing prerequisite-stage pass markers in the same
+integrated log. Reject zero elapsed ticks. Build:
 
 ```python
 guest = {
