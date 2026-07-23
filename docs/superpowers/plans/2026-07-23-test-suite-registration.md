@@ -100,7 +100,7 @@ fi
 smoke_job=$tmp/qemu-smoke.yml
 awk '
   $0 == "  qemu-smoke:" { found = 1 }
-  found && /^  [[:alnum:]_-]+:$/ && $0 != "  qemu-smoke:" { exit }
+  found && /^  [^[:space:]#][^:]*:[[:space:]]*$/ && $0 != "  qemu-smoke:" { exit }
   found { print }
 ' "$smoke_workflow" > "$smoke_job"
 smoke_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
