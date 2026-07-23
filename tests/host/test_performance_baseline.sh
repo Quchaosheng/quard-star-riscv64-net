@@ -32,7 +32,7 @@ QS:STRESS_ELAPSED_TICKS:3177262479
 QS:TEST_PASS:m6c2-stress
 EOF
 cat >"$tmp/stress.stats" <<'EOF'
-{"elapsed_seconds":239.0,"tcp_server_stress_handshakes":108,"tcp_server_stress_echo":108,"tcp_server_stress_parallel_peak":8,"tcp_server_stress_reconnects":100,"tcp_server_stress_fin":108,"tcp_server_stress_outstanding":0,"tcp_server_stress_live":0}
+{"elapsed_seconds":239.0,"tftp_bytes":0,"tcp_server_stress_handshakes":108,"tcp_server_stress_echo":108,"tcp_server_stress_parallel_peak":8,"tcp_server_stress_reconnects":100,"tcp_server_stress_fin":108,"tcp_server_stress_outstanding":0,"tcp_server_stress_live":0}
 EOF
 
 python3 "$root/scripts/perf-baseline.py" \
