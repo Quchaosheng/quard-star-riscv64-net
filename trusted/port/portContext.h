@@ -121,6 +121,7 @@
     csrr a1, sepc
     addi a1, a1, 4                      /* Synchronous so update exception return address to the instruction after the instruction that generated the exception. */
     store_x a1, 0( sp )                 /* Save updated exception return address. */
+    addi a1, sp, 0                      /* Pass the saved program counter slot. */
     load_x sp, xISRStackTop             /* Switch to ISR stack. */
     .endm
 /*-----------------------------------------------------------*/

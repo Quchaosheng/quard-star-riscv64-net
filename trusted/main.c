@@ -8,9 +8,20 @@
 QueueHandle_t xMyQueueHandle;
 
 static volatile uintptr_t pmp_probe_state;
+static uintptr_t pmp_probe_cause;
+static uintptr_t pmp_probe_address;
+static uintptr_t pmp_probe_resume;
 
-void freertos_risc_v_application_exception_handler(uintptr_t cause)
+void freertos_risc_v_application_exception_handler(uintptr_t cause,
+                                                     uintptr_t *saved_pc)
 {
+    if (pmp_probe_state == 1 && cause == pmp_probe_cause &&
+        csr_read(CSR_STVAL) == pmp_probe_address) {
+        *saved_pc = pmp_probe_resume;
+        pmp_probe_state = 2;
+        return;
+    }
+
     switch (cause) {
     case 1:
         _puts("QS:TRUSTED_EXCEPTION:INSTRUCTION_ACCESS\n");
@@ -19,11 +30,6 @@ void freertos_risc_v_application_exception_handler(uintptr_t cause)
         _puts("QS:TRUSTED_EXCEPTION:ILLEGAL_INSTRUCTION\n");
         break;
     case 5:
-        if (pmp_probe_state == 1 &&
-            csr_read(CSR_STVAL) == 0x80200000UL) {
-            pmp_probe_state = 2;
-            return;
-        }
         _puts("QS:TRUSTED_EXCEPTION:LOAD_ACCESS\n");
         break;
     case 7:
@@ -35,6 +41,27 @@ void freertos_risc_v_application_exception_handler(uintptr_t cause)
     }
     for (;;)
         __asm volatile("wfi");
+}
+
+static void pmp_probe_arm(uintptr_t cause, uintptr_t address, void *resume)
+{
+    pmp_probe_cause = cause;
+    pmp_probe_address = address;
+    pmp_probe_resume = (uintptr_t)resume;
+    pmp_probe_state = 1;
+    __asm volatile("" ::: "memory");
+}
+
+static void pmp_probe_require(char *marker)
+{
+    __asm volatile("" ::: "memory");
+    if (pmp_probe_state != 2) {
+        _puts("QS:PMP_TRUSTED_DENY_FAIL\n");
+        for (;;)
+            __asm volatile("wfi");
+    }
+    _puts(marker);
+    _puts("\n");
 }
 
 void freertos_risc_v_application_interrupt_handler(uintptr_t cause)
@@ -51,13 +78,24 @@ static void acceptance_task(void *arg)
     _puts("QS:TRUSTED_FIRST_TASK\n");
     vTaskDelay(pdMS_TO_TICKS(50));
     _puts("QS:TRUSTED_SCHED_OK\n");
-    pmp_probe_state = 1;
+
+    pmp_probe_arm(5, 0x80200000UL, &&resume_load);
     __asm volatile("lw zero, 0(%0)" ::
                    "r"((uintptr_t)0x80200000UL) : "memory");
-    if (pmp_probe_state == 2)
-        _puts("QS:PMP_TRUSTED_DENY_OK\n");
-    else
-        _puts("QS:PMP_TRUSTED_DENY_FAIL\n");
+resume_load:
+    pmp_probe_require("QS:PMP_TRUSTED_LOAD_DENY_OK");
+
+    pmp_probe_arm(7, 0x80200000UL, &&resume_store);
+    __asm volatile("sw zero, 0(%0)" ::
+                   "r"((uintptr_t)0x80200000UL) : "memory");
+resume_store:
+    pmp_probe_require("QS:PMP_TRUSTED_STORE_DENY_OK");
+
+    pmp_probe_arm(1, 0x80200000UL, &&resume_exec);
+    __asm volatile("jr %0" :: "r"((uintptr_t)0x80200000UL) : "memory");
+resume_exec:
+    pmp_probe_require("QS:PMP_TRUSTED_EXEC_DENY_OK");
+    _puts("QS:PMP_TRUSTED_DENY_OK\n");
     vTaskDelete(NULL);
 }
 

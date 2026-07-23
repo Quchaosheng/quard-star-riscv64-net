@@ -7,7 +7,6 @@
 #define IRQ_S_EXT   9
 #define IRQ_S_SOFT  1
 #define EXC_U_ECALL 8
-#define EXC_LOAD_ACCESS 5
 
 static u32 ipi_reported;
 
@@ -77,10 +76,11 @@ void kerneltrap()
 		panic("kerneltrap: not from supervisor mode");
 	}
 #ifdef QS_M9_PMP_TEST
+	reg_t cause_code = scause & SCAUSE_CODE_MASK;
+	reg_t resume_pc;
 	if ((scause & SCAUSE_INTERRUPT_MASK) == 0 &&
-	    (scause & SCAUSE_CODE_MASK) == EXC_LOAD_ACCESS &&
-	    m9_pmp_handle_load_fault(r_stval())) {
-		w_sepc(sepc + 4);
+	    m9_pmp_handle_fault(cause_code, r_stval(), &resume_pc)) {
+		w_sepc(resume_pc);
 		w_sstatus(sstatus);
 		return;
 	}
