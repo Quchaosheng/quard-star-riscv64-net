@@ -340,6 +340,7 @@ Windows Git because the worktree's `.git` file contains a Windows path, then
 run:
 
 ```sh
+./scripts/prepare-fatfs.sh
 make m8-build
 sudo -v
 sudo -E make m8-smoke
