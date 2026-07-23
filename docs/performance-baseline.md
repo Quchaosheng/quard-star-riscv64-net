@@ -14,6 +14,7 @@ checks bidirectional PMP denial. Its peer elapsed time covers the integrated
 acceptance path rather than one isolated protocol operation.
 
 ```sh
+./scripts/prepare-fatfs.sh
 make m8-build
 sudo -v
 sudo -E make m8-smoke
@@ -76,6 +77,16 @@ throughput.
 
 ## Initial Observation
 
-The first traceable observation is recorded only from fresh runs made after the
-reporter was added. Earlier local artifacts remain acceptance evidence but are
-not attributed to a commit after the fact.
+These first observations were captured on 2026-07-23 in WSL2 Ubuntu 24.04 on
+the same Windows 11 host. They establish traceable starting points only; one
+sample cannot demonstrate an optimization.
+
+| Stage | Commit | Guest elapsed ticks | Host elapsed seconds | Stage evidence |
+|---|---|---:|---:|---|
+| M8 | `7eeadb1e9689732d96a3474089966b1041559ae0` | 264957814 | 30.02252233500002 | 1 MiB TFTP, SHA-256, DNS/HTTP/NTP, seven ordinary harts, trusted scheduler and bidirectional PMP passed |
+| M6C2 stress | `cfb695f6a4940769d01ae1c7e331c71fd530610a` | 3225305239 | 245.72794389 | 100000 allocations, 10000 migrations, 108 TCP exchanges, peak 8, 100 reconnects, zero live/outstanding connections |
+
+The M8 integrated interval derives 34926.31 TFTP payload bytes per second. It
+includes boot and the other acceptance operations, so it must not be presented
+as isolated network throughput. Earlier local artifacts remain acceptance
+evidence but are not attributed to a commit after the fact.
