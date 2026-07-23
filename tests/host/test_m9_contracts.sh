@@ -4,6 +4,8 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 workflow=$root/.github/workflows/host-tests.yml
 smoke_workflow=$root/.github/workflows/m8-smoke.yml
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 grep -Fq 'runs-on: ubuntu-24.04' "$workflow"
 if grep -Eq '^[[:space:]]+submodules:' "$workflow" ||
    grep -Eq '^[[:space:]]*(run:[[:space:]]*)?git[[:space:]]+submodule([[:space:]]|$)' \
@@ -25,6 +27,34 @@ grep -Fq 'workflow_dispatch:' "$smoke_workflow"
 grep -Fq 'run: ./scripts/prepare-fatfs.sh' "$smoke_workflow"
 grep -Fq 'run: make m8-build' "$smoke_workflow"
 grep -Fq 'run: sudo -E make m8-smoke' "$smoke_workflow"
+job_count=$(grep -Fc '  qemu-smoke:' "$smoke_workflow" || true)
+if [ "$job_count" -ne 1 ]; then
+  echo 'FAIL: M8 CI must define exactly one qemu-smoke job' >&2
+  exit 1
+fi
+smoke_job=$tmp/qemu-smoke.yml
+awk '
+  $0 == "  qemu-smoke:" { found = 1 }
+  found && /^  [^[:space:]#][^:]*:[[:space:]]*$/ && $0 != "  qemu-smoke:" { exit }
+  found { print }
+' "$smoke_workflow" > "$smoke_job"
+smoke_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+  "$smoke_job" || true)
+build_test_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
+  "$smoke_job" || true)
+if [ "$smoke_count" -ne 1 ] || [ "$build_test_count" -ne 1 ]; then
+  echo 'FAIL: qemu-smoke must run smoke and build contracts exactly once' >&2
+  exit 1
+fi
+smoke_line=$(grep -En '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+  "$smoke_job" | cut -d: -f1)
+build_test_line=$(grep -En '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
+  "$smoke_job" | cut -d: -f1)
+if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
+   [ "$smoke_line" -ge "$build_test_line" ]; then
+  echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
+  exit 1
+fi
 grep -Fq 'uses: actions/cache@v4' "$smoke_workflow"
 grep -Fq 'uses: actions/upload-artifact@v4' "$smoke_workflow"
 grep -Fq 'make m8-build' "$root/README.md"

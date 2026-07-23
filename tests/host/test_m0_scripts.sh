@@ -15,6 +15,13 @@ git -C "$root" grep -Il '^#!' -- scripts tests/host | while IFS= read -r path; d
   [ "$mode" = 100755 ] || fail "$path must be executable in Git"
 done
 
+make -s -n -C "$root" test-host test-build > "$tmp/test-targets"
+git -C "$root" ls-files 'tests/host/test_*.sh' | while IFS= read -r test; do
+  awk -v command="./$test" \
+    '$1 == command { found = 1 } END { exit !found }' "$tmp/test-targets" || \
+    fail "$test is not reachable from test-host or test-build"
+done
+
 mkdir -p "$tmp/bin"
 cat > "$tmp/os-release" <<'EOF'
 ID=ubuntu
