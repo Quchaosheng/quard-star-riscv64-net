@@ -235,6 +235,8 @@ def replace_text(path, content):
 
 def main():
     args = parse_args()
+    if args.json_out.resolve() == args.markdown_out.resolve():
+        raise BaselineError("output paths must be different")
     report = build_report(args)
     json_text = json.dumps(report, indent=2, ensure_ascii=True) + "\n"
     markdown_text = render_markdown(report)
