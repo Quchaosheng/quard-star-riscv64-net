@@ -19,23 +19,18 @@
 - [ ] **Step 1: Write the failing workflow contract**
 
 Replace the two existing action assertions in `test_m9_contracts.sh` with
-job-scoped exact-major and unique-use checks:
+job-scoped raw-reference, exact-line, and non-disabled-step checks:
 
 ```sh
-cache_count=$(grep -Ec \
-  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/cache@v6[[:space:]]*$' \
-  "$smoke_job" || true)
-cache_total=$(grep -Ec \
-  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/cache@[^[:space:]]+[[:space:]]*$' \
-  "$smoke_job" || true)
-upload_count=$(grep -Ec \
-  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/upload-artifact@v7[[:space:]]*$' \
-  "$smoke_job" || true)
-upload_total=$(grep -Ec \
-  '^[[:space:]]+(-[[:space:]]+)?uses:[[:space:]]+actions/upload-artifact@[^[:space:]]+[[:space:]]*$' \
-  "$smoke_job" || true)
-if [ "$cache_count" -ne 1 ] || [ "$cache_total" -ne 1 ] ||
-   [ "$upload_count" -ne 1 ] || [ "$upload_total" -ne 1 ]; then
+cache_refs=$(grep -Eo 'actions/cache@[[:alnum:]._-]+' "$smoke_job" | wc -l)
+cache_v6_refs=$(grep -Eo 'actions/cache@v6([[:space:]]|$)' "$smoke_job" | wc -l)
+upload_refs=$(grep -Eo 'actions/upload-artifact@[[:alnum:]._-]+' "$smoke_job" | wc -l)
+upload_v7_refs=$(grep -Eo 'actions/upload-artifact@v7([[:space:]]|$)' "$smoke_job" | wc -l)
+if [ "$cache_refs" -ne 1 ] || [ "$cache_v6_refs" -ne 1 ] ||
+   [ "$upload_refs" -ne 1 ] || [ "$upload_v7_refs" -ne 1 ] ||
+   ! grep -Eq '^      - uses: actions/cache@v6[[:space:]]*$' "$smoke_job" ||
+   ! grep -Eq '^        uses: actions/upload-artifact@v7[[:space:]]*$' "$smoke_job" ||
+   grep -Eq '^[[:space:]]+if:[[:space:]]*(false|\$\{\{[[:space:]]*false[[:space:]]*\}\})[[:space:]]*$' "$smoke_job"; then
   echo 'FAIL: qemu-smoke must use Node.js 24 cache and upload actions exactly once' >&2
   exit 1
 fi
