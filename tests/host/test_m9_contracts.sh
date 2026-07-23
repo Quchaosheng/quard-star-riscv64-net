@@ -63,7 +63,7 @@ if [ "$cache_refs" -ne 1 ] || [ "$cache_v6_refs" -ne 1 ] ||
    [ "$upload_refs" -ne 1 ] || [ "$upload_v7_refs" -ne 1 ] ||
    ! grep -Eq '^      - uses: actions/cache@v6[[:space:]]*$' "$smoke_job" ||
    ! grep -Eq '^        uses: actions/upload-artifact@v7[[:space:]]*$' "$smoke_job" ||
-   grep -Eq '^[[:space:]]+if:[[:space:]]*(false|\$\{\{[[:space:]]*false[[:space:]]*\}\})[[:space:]]*$' "$smoke_job"; then
+   grep -Eiq '^[[:space:]]+if:[[:space:]]*(false|\$\{\{[[:space:]]*false[[:space:]]*\}\})[[:space:]]*(#.*)?$' "$smoke_job"; then
   echo 'FAIL: qemu-smoke must use Node.js 24 cache and upload actions exactly once' >&2
   exit 1
 fi
