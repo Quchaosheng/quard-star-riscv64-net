@@ -155,7 +155,7 @@ def build_report(args):
     peer = load_peer_stats(args.peer_stats)
     validate(args.stage, guest, peer)
     derived = {}
-    if "tftp_bytes" in peer:
+    if peer.get("tftp_bytes", 0) > 0:
         derived["tftp_bytes_per_second"] = (
             peer["tftp_bytes"] / peer["elapsed_seconds"]
         )
