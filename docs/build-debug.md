@@ -45,8 +45,8 @@ Successful runs contain `QS:TEST_PASS:m8-smoke` and `QS:PMP_UNTRUSTED_DENY_OK` i
 The kernel and trusted firmware retain ELF files with symbols:
 
 ```sh
-riscv64-unknown-elf-gdb kernel/os.elf
-riscv64-unknown-elf-gdb trusted/build/trusted_fw.elf
+gdb-multiarch kernel/os.elf
+gdb-multiarch trusted/build/trusted_fw.elf
 ```
 
 For protocol failures, inspect the first missing stable marker and `m5-peer.stats` before changing timeouts. Rebuild M7E or M8 from a fresh generated disk image when investigating FatFs allocation failures.
