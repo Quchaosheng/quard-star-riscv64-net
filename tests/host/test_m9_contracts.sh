@@ -7,6 +7,17 @@ smoke_workflow=${QS_M9_SMOKE_WORKFLOW:-$root/.github/workflows/m8-smoke.yml}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+if [ "${QS_M9_SUBMODULE_FIXTURE:-0}" -eq 0 ]; then
+  fixture=$tmp/m8-smoke.yml
+  cp "$smoke_workflow" "$fixture"
+  sed -i 's/submodules: true$/submodules: true # direct checkout/' "$fixture"
+  QS_M9_ACTION_FIXTURE=1 QS_M9_SUBMODULE_FIXTURE=1 \
+    QS_M9_SMOKE_WORKFLOW="$fixture" "$0" || {
+    echo 'FAIL: submodules true must allow a trailing YAML comment' >&2
+    exit 1
+  }
+fi
+
 if [ "${QS_M9_ACTION_FIXTURE:-0}" -eq 0 ]; then
   fixture=$tmp/m8-smoke.yml
   cp "$smoke_workflow" "$fixture"
@@ -27,8 +38,15 @@ if grep -Eq '^[[:space:]]+submodules:' "$workflow" ||
   echo 'FAIL: host CI must not fetch build-only submodules' >&2
   exit 1
 fi
-grep -Eq '^[[:space:]]+submodules:[[:space:]]+true[[:space:]]*$' \
-  "$smoke_workflow"
+submodules_values=$tmp/submodules-values
+sed -nE \
+  's/^[[:space:]]+submodules:[[:space:]]*(true|false)[[:space:]]*(#.*)?$/\1/ip' \
+  "$smoke_workflow" >"$submodules_values"
+if [ "$(wc -l <"$submodules_values")" -ne 1 ] ||
+   ! grep -Eiq '^true$' "$submodules_values"; then
+  echo 'FAIL: M8 CI must enable direct submodules checkout' >&2
+  exit 1
+fi
 if grep -Fq 'submodules: recursive' "$workflow" "$smoke_workflow"; then
   echo 'FAIL: CI must initialize only direct project submodules' >&2
   exit 1
