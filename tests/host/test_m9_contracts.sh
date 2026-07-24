@@ -2,10 +2,41 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-workflow=$root/.github/workflows/host-tests.yml
+workflow=${QS_M9_HOST_WORKFLOW:-$root/.github/workflows/host-tests.yml}
 smoke_workflow=${QS_M9_SMOKE_WORKFLOW:-$root/.github/workflows/m8-smoke.yml}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+collect_action_refs()
+{
+  sed -nE \
+    -e 's/^[[:space:]]*-[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
+    -e 's/^[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
+    "$1" >"$2"
+}
+
+if [ "${QS_M9_CHECKOUT_FIXTURE:-0}" -eq 0 ]; then
+  host_fixture=$tmp/host-tests.yml
+  smoke_fixture=$tmp/m8-smoke.yml
+  cp "$workflow" "$host_fixture"
+  cp "$smoke_workflow" "$smoke_fixture"
+  sed -i 's/actions\/checkout@v5/actions\/checkout@v4/' "$host_fixture"
+  sed -i 's/actions\/checkout@v5/actions\/checkout@v4/' "$smoke_fixture"
+  printf '%s\n' '# uses: actions/checkout@v5' >>"$host_fixture"
+  printf '%s\n' '# uses: actions/checkout@v5' >>"$smoke_fixture"
+  if QS_M9_ACTION_FIXTURE=1 QS_M9_SUBMODULE_FIXTURE=1 \
+    QS_M9_CHECKOUT_FIXTURE=1 QS_M9_HOST_WORKFLOW="$host_fixture" \
+    QS_M9_SMOKE_WORKFLOW="$smoke_workflow" "$0" >/dev/null 2>&1; then
+    echo 'FAIL: host checkout comments must not satisfy the version contract' >&2
+    exit 1
+  fi
+  if QS_M9_ACTION_FIXTURE=1 QS_M9_SUBMODULE_FIXTURE=1 \
+    QS_M9_CHECKOUT_FIXTURE=1 QS_M9_HOST_WORKFLOW="$workflow" \
+    QS_M9_SMOKE_WORKFLOW="$smoke_fixture" "$0" >/dev/null 2>&1; then
+    echo 'FAIL: M8 checkout must use the required active version' >&2
+    exit 1
+  fi
+fi
 
 if [ "${QS_M9_SUBMODULE_FIXTURE:-0}" -eq 0 ]; then
   fixture=$tmp/m8-smoke.yml
@@ -52,7 +83,19 @@ if grep -Fq 'submodules: recursive' "$workflow" "$smoke_workflow"; then
   exit 1
 fi
 grep -Fq 'run: make test-host' "$workflow"
-grep -Fq 'uses: actions/checkout@v5' "$workflow"
+host_action_refs=$tmp/host-action-refs
+smoke_action_refs=$tmp/smoke-action-refs
+collect_action_refs "$workflow" "$host_action_refs"
+collect_action_refs "$smoke_workflow" "$smoke_action_refs"
+host_checkout_refs=$(grep -Ec '^actions/checkout@' "$host_action_refs" || true)
+host_checkout_v5_refs=$(grep -Fxc 'actions/checkout@v5' "$host_action_refs" || true)
+smoke_checkout_refs=$(grep -Ec '^actions/checkout@' "$smoke_action_refs" || true)
+smoke_checkout_v5_refs=$(grep -Fxc 'actions/checkout@v5' "$smoke_action_refs" || true)
+if [ "$host_checkout_refs" -ne 1 ] || [ "$host_checkout_v5_refs" -ne 1 ] ||
+   [ "$smoke_checkout_refs" -ne 1 ] || [ "$smoke_checkout_v5_refs" -ne 1 ]; then
+  echo 'FAIL: CI workflows must use checkout v5 exactly once' >&2
+  exit 1
+fi
 grep -Fq 'device-tree-compiler' "$workflow"
 grep -Fq 'gcc-riscv64-unknown-elf' "$workflow"
 grep -Fq 'workflow_dispatch:' "$smoke_workflow"
@@ -88,10 +131,7 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   exit 1
 fi
 action_refs=$tmp/action-refs
-sed -nE \
-  -e 's/^[[:space:]]*-[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
-  -e 's/^[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
-  "$smoke_job" >"$action_refs"
+collect_action_refs "$smoke_job" "$action_refs"
 cache_refs=$(grep -Ec '^actions/cache@' "$action_refs" || true)
 cache_v6_refs=$(grep -Fxc 'actions/cache@v6' "$action_refs" || true)
 upload_refs=$(grep -Ec '^actions/upload-artifact@' "$action_refs" || true)
