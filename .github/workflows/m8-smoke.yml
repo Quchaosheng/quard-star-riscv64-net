@@ -1,6 +1,9 @@
 name: m8-smoke
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
   schedule:
     - cron: '30 18 * * 0'
