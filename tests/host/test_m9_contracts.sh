@@ -3,9 +3,23 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 workflow=$root/.github/workflows/host-tests.yml
-smoke_workflow=$root/.github/workflows/m8-smoke.yml
+smoke_workflow=${QS_M9_SMOKE_WORKFLOW:-$root/.github/workflows/m8-smoke.yml}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+
+if [ "${QS_M9_ACTION_FIXTURE:-0}" -eq 0 ]; then
+  fixture=$tmp/m8-smoke.yml
+  cp "$smoke_workflow" "$fixture"
+  cat >>"$fixture" <<'EOF'
+# actions/cache@v6
+# "actions/upload-artifact@v7"
+      - name: "actions/cache@v6"
+EOF
+  QS_M9_ACTION_FIXTURE=1 QS_M9_SMOKE_WORKFLOW="$fixture" "$0" || {
+    echo 'FAIL: action comments and quoted strings must not count as uses' >&2
+    exit 1
+  }
+fi
 grep -Fq 'runs-on: ubuntu-24.04' "$workflow"
 if grep -Eq '^[[:space:]]+submodules:' "$workflow" ||
    grep -Eq '^[[:space:]]*(run:[[:space:]]*)?git[[:space:]]+submodule([[:space:]]|$)' \
@@ -55,14 +69,17 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
   exit 1
 fi
-cache_refs=$(grep -Eo 'actions/cache@[[:alnum:]._-]+' "$smoke_job" | wc -l)
-cache_v6_refs=$(grep -Eo 'actions/cache@v6([[:space:]]|$)' "$smoke_job" | wc -l)
-upload_refs=$(grep -Eo 'actions/upload-artifact@[[:alnum:]._-]+' "$smoke_job" | wc -l)
-upload_v7_refs=$(grep -Eo 'actions/upload-artifact@v7([[:space:]]|$)' "$smoke_job" | wc -l)
+action_refs=$tmp/action-refs
+sed -nE \
+  -e 's/^[[:space:]]*-[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
+  -e 's/^[[:space:]]*uses:[[:space:]]*["'"'"']?([^[:space:]#"'"'"']+)["'"'"']?.*$/\1/p' \
+  "$smoke_job" >"$action_refs"
+cache_refs=$(grep -Ec '^actions/cache@' "$action_refs" || true)
+cache_v6_refs=$(grep -Fxc 'actions/cache@v6' "$action_refs" || true)
+upload_refs=$(grep -Ec '^actions/upload-artifact@' "$action_refs" || true)
+upload_v7_refs=$(grep -Fxc 'actions/upload-artifact@v7' "$action_refs" || true)
 if [ "$cache_refs" -ne 1 ] || [ "$cache_v6_refs" -ne 1 ] ||
    [ "$upload_refs" -ne 1 ] || [ "$upload_v7_refs" -ne 1 ] ||
-   ! grep -Eq '^      - uses: actions/cache@v6[[:space:]]*$' "$smoke_job" ||
-   ! grep -Eq '^        uses: actions/upload-artifact@v7[[:space:]]*$' "$smoke_job" ||
    grep -Eiq '^[[:space:]]+if:[[:space:]]*(false|\$\{\{[[:space:]]*false[[:space:]]*\}\})[[:space:]]*(#.*)?$' "$smoke_job"; then
   echo 'FAIL: qemu-smoke must use Node.js 24 cache and upload actions exactly once' >&2
   exit 1
