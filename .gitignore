@@ -17,6 +17,7 @@
 *.pcap
 *.swp
 *~
+__pycache__/
 /kernel/src/link_app.S
 /trusted/build/
 /user/bin/
