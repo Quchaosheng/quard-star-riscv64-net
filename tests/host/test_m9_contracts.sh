@@ -159,7 +159,10 @@ if grep -Fq 'https://github.com/Quchaosheng/tiny-tcpip-stack' \
   echo 'FAIL: source migration links to unavailable repositories' >&2
   exit 1
 fi
-grep -Fq 'current release line is `v1.0.0`' "$root/README.md"
+grep -Fq 'current release is `v1.0.1`' "$root/README.md"
+grep -Fq '`v1.0.1` is a maintenance release' "$root/README.md"
+grep -Fq 'checkbox state in an implementation plan is not a live' \
+  "$root/docs/superpowers/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
 grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
 grep -Fq 'QS:PMP_UNTRUSTED_DENY_OK' "$root/README.md"
@@ -171,8 +174,8 @@ if grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"; the
   echo 'FAIL: limitations still describe the removed allmem boundary' >&2
   exit 1
 fi
-if grep -Fq '`v1.0.0` is not published' "$root/README.md"; then
-  echo 'FAIL: README still describes v1.0.0 as unpublished' >&2
+if grep -Eq '`v1\.0\.[01]` is not published' "$root/README.md"; then
+  echo 'FAIL: README describes a published release as unpublished' >&2
   exit 1
 fi
 if git -C "$root" ls-files '*.pcap' | grep -q .; then

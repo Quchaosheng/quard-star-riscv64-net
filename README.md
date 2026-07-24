@@ -10,7 +10,12 @@ Build and debugging commands are documented in [docs/build-debug.md](docs/build-
 
 ## Release status
 
-The current release line is `v1.0.0`. Host CI and the M8 QEMU/TAP acceptance test cover the implemented eight-hart, storage, network, FreeRTOS scheduling, and domain-isolation paths described below.
+The current release is `v1.0.1`. Host CI and the M8 QEMU/TAP acceptance test cover the implemented eight-hart, storage, network, FreeRTOS scheduling, and domain-isolation paths described below.
+
+`v1.0.1` is a maintenance release that adds reproducible performance reports,
+strengthens PMP access-fault evidence, updates GitHub Actions, hardens CI and
+test-registration contracts, and aligns the post-release documentation. It
+does not expand the `v1.0.0` protocol or hardware-support boundary.
 
 `v1.0.0` adds an S-mode FreeRTOS scheduler on hart7 and PMP-enforced memory isolation between the OpenSBI domains. Hart7 receives an 8 MiB trusted RAM region and UART2, while harts 0-6 are denied both regions. See [docs/limitations.md](docs/limitations.md) for the remaining boundaries.
 
