@@ -5,6 +5,7 @@ import math
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,7 +29,9 @@ class BaselineError(Exception):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", required=True)
+    parser.add_argument(
+        "--stage", required=True, choices=("m8", "m6c2-stress")
+    )
     parser.add_argument("--commit")
     parser.add_argument("--qemu-log", required=True, type=pathlib.Path)
     parser.add_argument("--peer-stats", required=True, type=pathlib.Path)
@@ -232,9 +235,10 @@ def render_markdown(report):
     return "\n".join(lines)
 
 
-def replace_text(path, content):
+def write_temporary(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
                 mode="w", encoding="utf-8", newline="\n", delete=False,
                 dir=path.parent, prefix=f".{path.name}.") as output:
@@ -242,11 +246,58 @@ def replace_text(path, content):
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, path)
+    except OSError:
+        if temporary is not None:
+            cleanup_paths((temporary,))
+        raise
+    return temporary
+
+
+def cleanup_paths(paths):
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def replace_texts(outputs):
+    outputs = tuple(outputs)
+    temporaries = {}
+    backups = {}
+    replaced = []
+    try:
+        for path, content in outputs:
+            temporaries[path] = write_temporary(path, content)
+        for path, _ in outputs:
+            if path.exists():
+                with tempfile.NamedTemporaryFile(
+                        delete=False, dir=path.parent,
+                        prefix=f".{path.name}.backup.") as backup:
+                    backup_path = pathlib.Path(backup.name)
+                backups[path] = backup_path
+                shutil.copy2(path, backup_path)
+        for path, _ in outputs:
+            os.replace(temporaries.pop(path), path)
+            replaced.append(path)
     except OSError as error:
-        if "temporary" in locals():
-            temporary.unlink(missing_ok=True)
-        raise BaselineError(f"cannot write {path}: {error}") from error
+        rollback_errors = []
+        for path in reversed(replaced):
+            try:
+                backup = backups.pop(path, None)
+                if backup is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, path)
+            except OSError as rollback_error:
+                rollback_errors.append(f"{path}: {rollback_error}")
+        cleanup_paths(temporaries.values())
+        cleanup_paths(backups.values())
+        detail = ""
+        if rollback_errors:
+            detail = "; rollback failed for " + ", ".join(rollback_errors)
+        raise BaselineError(f"cannot replace report outputs: {error}{detail}") from error
+    cleanup_paths(backups.values())
 
 
 def main():
@@ -256,8 +307,8 @@ def main():
     report = build_report(args)
     json_text = json.dumps(report, indent=2, ensure_ascii=True) + "\n"
     markdown_text = render_markdown(report)
-    replace_text(args.json_out, json_text)
-    replace_text(args.markdown_out, markdown_text)
+    replace_texts(((args.json_out, json_text),
+                   (args.markdown_out, markdown_text)))
 
 
 if __name__ == "__main__":

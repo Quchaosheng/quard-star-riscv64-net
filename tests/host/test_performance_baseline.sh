@@ -155,6 +155,16 @@ expect_fail m6c2-stress "$tmp/wrong-workload.log" "$tmp/stress.stats" \
 expect_fail m8 "$tmp/non-ascii.log" "$tmp/m8.stats" \
     'invalid allocation_operations counter'
 
+if python3 "$root/scripts/perf-baseline.py" \
+    --stage unsupported \
+    --qemu-log "$tmp/m8.log" \
+    --peer-stats "$tmp/m8.stats" \
+    --json-out "$tmp/unsupported.json" \
+    --markdown-out "$tmp/unsupported.md" 2>"$tmp/error"; then
+    fail "unsupported stage passed"
+fi
+grep -Fq 'invalid choice' "$tmp/error" || fail "missing unsupported-stage error"
+
 printf 'old-output\n' >"$tmp/same-output"
 if python3 "$root/scripts/perf-baseline.py" \
     --stage m8 \
@@ -168,6 +178,46 @@ grep -Fq 'output paths must be different' "$tmp/error" || \
     fail "missing identical-output error"
 [ "$(cat "$tmp/same-output")" = old-output ] || \
     fail "identical output path was replaced"
+
+python3 - "$root/scripts/perf-baseline.py" "$tmp" <<'PY'
+import importlib.util
+import pathlib
+import sys
+from unittest import mock
+
+module_path = pathlib.Path(sys.argv[1])
+directory = pathlib.Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location("perf_baseline", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+json_path = directory / "rollback.json"
+markdown_path = directory / "rollback.md"
+json_path.write_text("old-json\n", encoding="utf-8")
+markdown_path.write_text("old-markdown\n", encoding="utf-8")
+real_replace = module.os.replace
+target_replacements = 0
+
+def fail_second_target(source, destination):
+    global target_replacements
+    if pathlib.Path(destination) in (json_path, markdown_path):
+        target_replacements += 1
+        if target_replacements == 2:
+            raise OSError("injected second-output failure")
+    return real_replace(source, destination)
+
+with mock.patch.object(module.os, "replace", side_effect=fail_second_target):
+    try:
+        module.replace_texts(((json_path, "new-json\n"),
+                              (markdown_path, "new-markdown\n")))
+    except module.BaselineError:
+        pass
+    else:
+        raise AssertionError("second-output failure passed")
+
+assert json_path.read_text(encoding="utf-8") == "old-json\n"
+assert markdown_path.read_text(encoding="utf-8") == "old-markdown\n"
+PY
 
 mkdir "$tmp/bin"
 cat >"$tmp/bin/python3" <<'EOF'

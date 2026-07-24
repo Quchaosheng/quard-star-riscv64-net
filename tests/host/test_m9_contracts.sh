@@ -99,6 +99,16 @@ fi
 grep -Fq 'device-tree-compiler' "$workflow"
 grep -Fq 'gcc-riscv64-unknown-elf' "$workflow"
 grep -Fq 'workflow_dispatch:' "$smoke_workflow"
+release_trigger=$tmp/release-trigger.yml
+awk '
+  $0 == "on:" { found = 1 }
+  found && $0 == "permissions:" { exit }
+  found { print }
+' "$smoke_workflow" >"$release_trigger"
+grep -Eq '^[[:space:]]{2}push:[[:space:]]*$' "$release_trigger"
+grep -Eq '^[[:space:]]{4}tags:[[:space:]]*$' "$release_trigger"
+grep -Eq "^[[:space:]]{6}-[[:space:]]+['\"]?v\\*['\"]?[[:space:]]*$" \
+  "$release_trigger"
 grep -Fq 'run: ./scripts/prepare-fatfs.sh' "$smoke_workflow"
 grep -Fq 'run: make m8-build' "$smoke_workflow"
 grep -Fq 'run: sudo -E make m8-smoke' "$smoke_workflow"
@@ -159,8 +169,8 @@ if grep -Fq 'https://github.com/Quchaosheng/tiny-tcpip-stack' \
   echo 'FAIL: source migration links to unavailable repositories' >&2
   exit 1
 fi
-grep -Fq 'current release is `v1.0.1`' "$root/README.md"
-grep -Fq '`v1.0.1` is a maintenance release' "$root/README.md"
+grep -Fq 'current release is `v1.0.2`' "$root/README.md"
+grep -Fq '`v1.0.2` is a maintenance release' "$root/README.md"
 grep -Fq 'checkbox state in an implementation plan is not a live' \
   "$root/docs/superpowers/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
@@ -174,7 +184,7 @@ if grep -Fq 'not PMP-enforced memory isolation' "$root/docs/limitations.md"; the
   echo 'FAIL: limitations still describe the removed allmem boundary' >&2
   exit 1
 fi
-if grep -Eq '`v1\.0\.[01]` is not published' "$root/README.md"; then
+if grep -Eq '`v1\.0\.[012]` is not published' "$root/README.md"; then
   echo 'FAIL: README describes a published release as unpublished' >&2
   exit 1
 fi
