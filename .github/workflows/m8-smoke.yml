@@ -27,7 +27,7 @@ jobs:
             gcc-riscv64-unknown-elf binutils-riscv64-unknown-elf \
             device-tree-compiler libfdt-dev python3 \
             libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
-            flex bison bc iproute2 tcpdump curl
+            flex bison bc iproute2 tcpdump curl ffmpeg
       - uses: actions/cache@v6
         with:
           path: ~/.cache/quard-star-riscv64-net
@@ -38,6 +38,12 @@ jobs:
         run: make m8-build
       - name: Run M8 QEMU/TAP smoke
         run: sudo -E make m8-smoke
+      - name: Render M8 evidence video
+        run: |
+          python3 scripts/render-demo.py \
+            --output out/m8/demo/qemu-m8-demo.mp4 \
+            --poster out/m8/demo/qemu-m8-demo-poster.png \
+            --evidence out/m8/demo/qemu-m8-demo-evidence.json
       - name: Run build contracts
         run: make test-build
       - name: Upload serial logs
@@ -51,4 +57,7 @@ jobs:
             out/m8/kernel.log
             out/m8/trusted.log
             out/m8/m5-peer.stats
+            out/m8/demo/qemu-m8-demo.mp4
+            out/m8/demo/qemu-m8-demo-poster.png
+            out/m8/demo/qemu-m8-demo-evidence.json
           if-no-files-found: ignore

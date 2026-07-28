@@ -15,6 +15,27 @@ FreeRTOS hart. Its deterministic QEMU/TAP acceptance test covers SMP,
 storage, networking, application protocols, trusted scheduling, and
 PMP-enforced memory isolation without depending on the public Internet.
 
+## QEMU demo
+
+[![Watch the 42-second M8 QEMU/TAP evidence replay](docs/assets/qemu-m8-demo-poster.png)](docs/assets/qemu-m8-demo.mp4)
+
+The 42-second video is generated from a real, passing M8 run. Every displayed
+result is validated against `qemu.log`, `trusted.log`, and `m5-peer.stats`
+before rendering; it is an evidence replay rather than a hand-authored success
+animation. The accompanying [evidence manifest](docs/assets/qemu-m8-demo-evidence.json)
+records the source and media SHA-256 digests.
+
+Reproduce the complete run and video on Ubuntu 24.04/26.04 or WSL2:
+
+```sh
+make demo
+```
+
+To render again from an already accepted `out/m8` artifact set, use
+`make demo-render`. See [QEMU Demo](docs/qemu-demo.md) for requirements,
+validation rules, and generated files. Scheduled and release-tag M8 workflows
+also regenerate the media and include it in the `m8-serial-logs` artifact.
+
 ## At a glance
 
 | Area | Implemented scope |
@@ -350,6 +371,7 @@ protocol claims.
 | --- | --- |
 | [Design and Implementation](docs/quard-star-riscv64-net-design.md) | Detailed architecture, resource contracts, milestones, and acceptance criteria |
 | [Build and Debug](docs/build-debug.md) | Environment setup, commands, logs, GDB, and failure triage |
+| [QEMU Demo](docs/qemu-demo.md) | Reproduce or re-render the verified M8 video |
 | [Current Limitations](docs/limitations.md) | Security, protocol, platform, and testing boundaries |
 | [Performance Baselines](docs/performance-baseline.md) | Artifact reporting and comparison rules |
 | [Source Migration](docs/source-migration.md) | First-party code provenance and migration baselines |
