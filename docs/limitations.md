@@ -1,5 +1,7 @@
 # Current Limitations
 
+**English** | [简体中文](limitations.zh-CN.md)
+
 - The network stack implements IPv4 only. IPv6, DHCP, TLS, HTTPS, and network offloads are not implemented.
 - Guest networking uses the fixed `192.168.100.0/24` test network. Public Internet access is not part of acceptance testing.
 - The TFTP client implements the tested read path and `windowsize=4`; it is not a general-purpose TFTP client or server.

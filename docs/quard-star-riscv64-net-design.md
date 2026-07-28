@@ -1,5 +1,7 @@
 # quard-star-riscv64-net 设计与实施说明
 
+[English project overview](../README.md#system-architecture) | **简体中文**
+
 > 状态：设计基线已确认，尚未开始实现
 > 目标平台：Windows 11 + WSL2 Ubuntu 24.04/26.04 LTS + QEMU RISC-V64
 > 项目定位：从零构建的 RISC-V64 SMP 教学内核，融合自研 TCP/IP 协议栈、VirtIO 网络、用户态 Socket API，以及独立的 FreeRTOS trusted domain

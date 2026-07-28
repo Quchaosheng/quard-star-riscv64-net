@@ -1,5 +1,7 @@
 # QEMU Demo
 
+**English** | [简体中文](qemu-demo.zh-CN.md)
+
 The README demo is a compact replay of a real M8 QEMU/TAP acceptance run. It
 does not synthesize successful results: the renderer first validates the raw
 ordinary-kernel log, trusted UART2 log, and TAP peer statistics, then presents

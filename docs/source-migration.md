@@ -1,5 +1,7 @@
 # Source Migration
 
+**English** | [简体中文](source-migration.zh-CN.md)
+
 This repository starts with new Git history. First-party code is migrated selectively from immutable source revisions, without importing the old repositories' history or copying their bundled third-party trees.
 
 The original source repositories are no longer publicly available as of 2026-07-23. Their names and fixed revisions are retained below as historical migration records, but those revisions cannot currently be fetched independently from the public project.
