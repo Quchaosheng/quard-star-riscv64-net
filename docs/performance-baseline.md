@@ -1,5 +1,7 @@
 # Performance Baselines
 
+**English** | [简体中文](performance-baseline.zh-CN.md)
+
 Performance work starts from repeatable acceptance workloads. These reports are
 observations, not CI gates: values from different hosts, QEMU builds, or runner
 types must not be compared directly.

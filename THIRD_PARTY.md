@@ -1,5 +1,7 @@
 # Third-Party Software
 
+**English** | [简体中文](THIRD_PARTY.zh-CN.md)
+
 Third-party source keeps its upstream license. Git dependencies are pinned by the repository's gitlinks; FatFs is pinned by its official archive checksum.
 
 | Component | Upstream | Version | Fixed revision | License | Purpose | Local changes |

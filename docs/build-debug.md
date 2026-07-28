@@ -1,5 +1,7 @@
 # Build and Debug
 
+**English** | [简体中文](build-debug.zh-CN.md)
+
 ## Environment
 
 Use Ubuntu 24.04 or 26.04, either directly or through WSL2. Check the required commands and development headers before building:
