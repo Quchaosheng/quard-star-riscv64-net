@@ -1,0 +1,34 @@
+{
+  "acceptance": {
+    "allocation_operations": 14000,
+    "dns_replies": 2,
+    "http_responses": 1,
+    "ntp_replies": 1,
+    "ordinary_harts": 7,
+    "pass_marker": "QS:TEST_PASS:m8-smoke",
+    "peer_elapsed_seconds": 17.91271589500002,
+    "raw_frames": 32,
+    "scheduler_migrations": 100,
+    "tftp_blocks": 2049,
+    "tftp_bytes": 1048576,
+    "trusted_harts": 1
+  },
+  "media": {
+    "codec": "h264",
+    "duration_seconds": 42.0,
+    "height": 720,
+    "pixel_format": "yuv420p",
+    "poster": "docs/assets/qemu-m8-demo-poster.png",
+    "poster_sha256": "2e2926628416bace389c6bee3f15c95a442927a1aa6a59393e2a4e690715e2ef",
+    "video": "docs/assets/qemu-m8-demo.mp4",
+    "video_sha256": "0fcc5bb81fdaa4ee4d537e9e4f5cf34036bae2c37eff30a769af04297a30856d",
+    "width": 1280
+  },
+  "schema_version": 1,
+  "source_commit": "825c253f7a8e",
+  "source_sha256": {
+    "peer_stats": "74c5a722c175ee25dd532fc0a1d5fad656c000ad8d96a348d89bcf48933a2f62",
+    "qemu_log": "a34b2193ad5d1874209c47a5f5ac14c8b5b1d7bb5df2d72e255e16f41e70cde1",
+    "trusted_log": "705d866c63ba498649e70969967210f798198149ef9d7316bef8e6a14306c327"
+  }
+}
