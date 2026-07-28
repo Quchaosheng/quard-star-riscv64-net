@@ -1,4 +1,4 @@
-.PHONY: check-env deps check-sources test-host test-build m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke m7b-build m7b-smoke m7c-build m7c-smoke m7d-build m7d-smoke m7e-build m7e-smoke m8-build m8-smoke
+.PHONY: check-env deps check-sources test-host test-build demo demo-render m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke m7b-build m7b-smoke m7c-build m7c-smoke m7d-build m7d-smoke m7e-build m7e-smoke m8-build m8-smoke
 
 check-env:
 	./scripts/check-env.sh
@@ -94,9 +94,17 @@ test-host:
 	./tests/host/test_m8_contracts.sh
 	./tests/host/test_m9_contracts.sh
 	./tests/host/test_performance_baseline.sh
+	./tests/host/test_demo_renderer.sh
 
 test-build:
 	./tests/host/test_m1_build_contracts.sh
+
+demo: m8-build
+	sudo -E $(MAKE) m8-smoke
+	$(MAKE) demo-render
+
+demo-render:
+	python3 ./scripts/render-demo.py
 
 m1-build: check-env check-sources
 	./scripts/m1-build.sh
