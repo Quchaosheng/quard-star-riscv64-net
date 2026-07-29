@@ -18,7 +18,9 @@ PMP 内存隔离，运行过程不依赖公网。
 
 ## QEMU 演示
 
-[![观看 42 秒 M8 QEMU/TAP 证据回放](docs/assets/qemu-m8-demo-poster.png)](docs/assets/qemu-m8-demo.mp4)
+<a href="docs/assets/qemu-m8-demo.mp4"><img src="docs/assets/qemu-m8-demo.gif" alt="42 秒 M8 QEMU/TAP 证据回放动图"></a>
+
+该动图由已提交的证据回放 MP4 原始帧生成；点击可打开完整的 42 秒 MP4。
 
 这段 42 秒视频由一次真实通过的 M8 运行生成。渲染前，脚本会校验
 `qemu.log`、`trusted.log` 和 `m5-peer.stats` 中的每一项展示结果，因此它是
