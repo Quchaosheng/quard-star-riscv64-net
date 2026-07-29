@@ -14,6 +14,11 @@
     "trusted_harts": 1
   },
   "media": {
+    "animated_preview": "docs/assets/qemu-m8-demo.gif",
+    "animated_preview_fps": 3,
+    "animated_preview_height": 360,
+    "animated_preview_sha256": "6251fe2b4a056a0832965a7692eb32ca904e914ab844e8469a924cfcafdff7ef",
+    "animated_preview_width": 640,
     "codec": "h264",
     "duration_seconds": 42.0,
     "height": 720,
@@ -31,4 +36,4 @@
     "qemu_log": "a34b2193ad5d1874209c47a5f5ac14c8b5b1d7bb5df2d72e255e16f41e70cde1",
     "trusted_log": "705d866c63ba498649e70969967210f798198149ef9d7316bef8e6a14306c327"
   }
-}
+}\n

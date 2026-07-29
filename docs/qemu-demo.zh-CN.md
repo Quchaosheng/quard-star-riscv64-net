@@ -8,7 +8,9 @@ README 中的视频是一次真实 M8 QEMU/TAP 验收运行的紧凑回放。它
 
 ## 观看
 
-[![观看 M8 QEMU/TAP 证据回放](assets/qemu-m8-demo-poster.png)](assets/qemu-m8-demo.mp4)
+<a href="assets/qemu-m8-demo.mp4"><img src="assets/qemu-m8-demo.gif" alt="M8 QEMU/TAP 证据回放动图"></a>
+
+该预览动图由已提交 MP4 的原始帧生成；点击可打开完整的 42 秒视频。
 
 仓库中的媒体采用 H.264 编码，分辨率 1280x720、30 fps、`yuv420p`，无音频。
 源文件和输出文件摘要记录在
@@ -53,6 +55,7 @@ make demo-render
 并写出：
 
 - `docs/assets/qemu-m8-demo.mp4`
+- `docs/assets/qemu-m8-demo.gif`
 - `docs/assets/qemu-m8-demo-poster.png`
 - `docs/assets/qemu-m8-demo-evidence.json`
 

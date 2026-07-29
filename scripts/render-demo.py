@@ -60,6 +60,11 @@ def parse_args() -> argparse.Namespace:
         default=pathlib.Path("docs/assets/qemu-m8-demo-poster.png"),
     )
     parser.add_argument(
+        "--preview",
+        type=pathlib.Path,
+        default=pathlib.Path("docs/assets/qemu-m8-demo.gif"),
+    )
+    parser.add_argument(
         "--evidence",
         type=pathlib.Path,
         default=pathlib.Path("docs/assets/qemu-m8-demo-evidence.json"),
@@ -343,6 +348,7 @@ def run(command: list[str], *, cwd: pathlib.Path | None = None) -> None:
 def render(args: argparse.Namespace, summary: dict[str, object]) -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.poster.parent.mkdir(parents=True, exist_ok=True)
+    args.preview.parent.mkdir(parents=True, exist_ok=True)
     args.evidence.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="qs-demo-") as directory:
@@ -407,6 +413,26 @@ def render(args: argparse.Namespace, summary: dict[str, object]) -> None:
         ]
     )
 
+    run(
+        [
+            args.ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-i",
+            str(args.output.resolve()),
+            "-vf",
+            (
+                "fps=3,scale=640:-1:flags=lanczos,split[s0][s1];"
+                "[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer"
+            ),
+            "-loop",
+            "0",
+            str(args.preview.resolve()),
+        ]
+    )
+
     try:
         probe = subprocess.run(
             [
@@ -445,6 +471,11 @@ def render(args: argparse.Namespace, summary: dict[str, object]) -> None:
         "video_sha256": sha256(args.output),
         "poster": args.poster.as_posix(),
         "poster_sha256": sha256(args.poster),
+        "animated_preview": args.preview.as_posix(),
+        "animated_preview_sha256": sha256(args.preview),
+        "animated_preview_width": 640,
+        "animated_preview_height": 360,
+        "animated_preview_fps": 3,
         "codec": stream["codec_name"],
         "pixel_format": stream["pix_fmt"],
         "width": stream["width"],
@@ -463,7 +494,7 @@ def main() -> int:
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
     render(args, summary)
-    print(f"PASS: rendered {args.output} and {args.poster}")
+    print(f"PASS: rendered {args.output}, {args.poster}, and {args.preview}")
     return 0
 
 

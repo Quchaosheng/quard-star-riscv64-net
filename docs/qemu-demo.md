@@ -9,7 +9,9 @@ their accepted evidence as a readable 42-second video.
 
 ## Watch
 
-[![Watch the M8 QEMU/TAP evidence replay](assets/qemu-m8-demo-poster.png)](assets/qemu-m8-demo.mp4)
+<a href="assets/qemu-m8-demo.mp4"><img src="assets/qemu-m8-demo.gif" alt="Animated M8 QEMU/TAP evidence replay"></a>
+
+The preview is animated from the committed MP4. Click it to open the full 42-second video.
 
 The committed media is H.264, 1280x720, 30 fps, `yuv420p`, without audio. Its
 source and output digests are recorded in
@@ -57,6 +59,7 @@ The renderer reads:
 It writes:
 
 - `docs/assets/qemu-m8-demo.mp4`
+- `docs/assets/qemu-m8-demo.gif`
 - `docs/assets/qemu-m8-demo-poster.png`
 - `docs/assets/qemu-m8-demo-evidence.json`
 
@@ -73,7 +76,7 @@ Rendering is refused when any of the following conditions is true:
   reports outstanding TFTP packets.
 - The output is not 42-second H.264 video at 1280x720 with `yuv420p` pixels.
 
-The video is an explanatory artifact, not additional acceptance authority.
+The video and animated preview are explanatory artifacts, not additional acceptance authority.
 The raw logs, peer statistics, smoke-test exit status, and CI artifacts remain
 the authoritative evidence.
 
