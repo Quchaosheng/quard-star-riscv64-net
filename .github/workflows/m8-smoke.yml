@@ -43,6 +43,7 @@ jobs:
           python3 scripts/render-demo.py \
             --output out/m8/demo/qemu-m8-demo.mp4 \
             --poster out/m8/demo/qemu-m8-demo-poster.png \
+            --preview out/m8/demo/qemu-m8-demo.gif \
             --evidence out/m8/demo/qemu-m8-demo-evidence.json
       - name: Run build contracts
         run: make test-build
@@ -58,6 +59,7 @@ jobs:
             out/m8/trusted.log
             out/m8/m5-peer.stats
             out/m8/demo/qemu-m8-demo.mp4
+            out/m8/demo/qemu-m8-demo.gif
             out/m8/demo/qemu-m8-demo-poster.png
             out/m8/demo/qemu-m8-demo-evidence.json
           if-no-files-found: ignore
