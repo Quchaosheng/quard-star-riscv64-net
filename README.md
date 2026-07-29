@@ -19,7 +19,9 @@ PMP-enforced memory isolation without depending on the public Internet.
 
 ## QEMU demo
 
-[![Watch the 42-second M8 QEMU/TAP evidence replay](docs/assets/qemu-m8-demo-poster.png)](docs/assets/qemu-m8-demo.mp4)
+<a href="docs/assets/qemu-m8-demo.mp4"><img src="docs/assets/qemu-m8-demo.gif" alt="Animated 42-second M8 QEMU/TAP evidence replay"></a>
+
+Animated preview from the committed evidence replay. Click it to open the full 42-second MP4.
 
 The 42-second video is generated from a real, passing M8 run. Every displayed
 result is validated against `qemu.log`, `trusted.log`, and `m5-peer.stats`
