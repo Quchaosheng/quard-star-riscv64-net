@@ -7,13 +7,12 @@
 [![release](https://img.shields.io/github/v/release/Quchaosheng/quard-star-riscv64-net)](https://github.com/Quchaosheng/quard-star-riscv64-net/releases/latest)
 [![license](https://img.shields.io/github/license/Quchaosheng/quard-star-riscv64-net)](LICENSE)
 
-这是一个面向教学与实验的 RISC-V64 SMP 操作系统，运行于定制的 QEMU
-quard-star 机器。项目包含独立实现的 C 内核、OpenSBI domain、专用的
-FreeRTOS 可信 hart、VirtIO 块设备与网络设备、FatFs，以及一个小型自研
-TCP/IP 协议栈。
+这是一个运行在定制 QEMU quard-star 机器上的 RISC-V64 SMP 操作系统。项目以
+独立实现的 C 内核为核心，集成 OpenSBI domain、专用的 FreeRTOS 可信 hart、
+VirtIO 块设备与网络设备、FatFs，以及内置 TCP/IP 协议栈。
 
-完整的 M8 系统会启动 7 个普通内核 hart 和 1 个隔离的 FreeRTOS hart。
-确定性的 QEMU/TAP 验收测试覆盖 SMP、存储、网络、应用协议、可信调度和
+当前 M8 配置启动 7 个运行 SMP 内核的 hart 和 1 个隔离的 FreeRTOS hart。
+可重复执行的 QEMU/TAP 验收测试覆盖 SMP、存储、网络、应用协议、可信调度和
 PMP 内存隔离，运行过程不依赖公网。
 
 ## QEMU 演示
@@ -365,9 +364,8 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 
 ## 致谢
 
-内核的教学设计受到清华大学开源 rCore 项目的启发。感谢 rCore 贡献者让操作
-系统概念和实现技术更容易被学习者理解。本仓库中的内核是独立的 C 语言设计与
-实现。
+内核设计参考了清华大学开源 rCore 项目的思路。感谢 rCore 贡献者让操作系统
+概念和实现技术更容易被学习者理解。本仓库中的内核是独立的 C 语言设计与实现。
 
 项目自有代码按仓库中的 [MIT License](LICENSE) 分发。捆绑的第三方组件保留
 各自的上游许可证。

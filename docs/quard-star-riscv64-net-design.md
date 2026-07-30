@@ -2,13 +2,13 @@
 
 [English project overview](../README.md#system-architecture) | **简体中文**
 
-> 状态：设计基线已确认，尚未开始实现
+> 文档状态：历史设计基线；当前实现状态和已验证范围请以 [README](../README.zh-CN.md) 为准
 > 目标平台：Windows 11 + WSL2 Ubuntu 24.04/26.04 LTS + QEMU RISC-V64
-> 项目定位：从零构建的 RISC-V64 SMP 教学内核，融合自研 TCP/IP 协议栈、VirtIO 网络、用户态 Socket API，以及独立的 FreeRTOS trusted domain
+> 项目定位：独立实现的 RISC-V64 SMP 内核，集成 TCP/IP 协议栈、VirtIO 网络、用户态 Socket API 和独立的 FreeRTOS trusted domain
 
 ## 1. 文档目的
 
-本文档是新项目的唯一实施基线，说明：
+本文档保留项目启动时的设计决策和实施计划，说明：
 
 - 新项目最终要实现什么。
 - 哪些旧代码保留、迁移、重写或删除。
