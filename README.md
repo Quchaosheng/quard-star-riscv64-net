@@ -7,13 +7,13 @@
 [![release](https://img.shields.io/github/v/release/Quchaosheng/quard-star-riscv64-net)](https://github.com/Quchaosheng/quard-star-riscv64-net/releases/latest)
 [![license](https://img.shields.io/github/license/Quchaosheng/quard-star-riscv64-net)](LICENSE)
 
-An educational RISC-V64 SMP operating system for the custom QEMU quard-star
-machine. The project combines an independently implemented C kernel, OpenSBI
-domains, a dedicated FreeRTOS trusted hart, VirtIO block and network devices,
-FatFs, and a small first-party TCP/IP stack.
+An independently implemented RISC-V64 SMP operating system for the custom QEMU
+quard-star machine. The project combines a C kernel, OpenSBI domains, a
+dedicated FreeRTOS trusted hart, VirtIO block and network devices, FatFs, and
+an in-tree TCP/IP stack.
 
-The complete M8 system boots seven ordinary kernel harts and one isolated
-FreeRTOS hart. Its deterministic QEMU/TAP acceptance test covers SMP,
+The current M8 configuration boots seven harts running the SMP kernel and one
+isolated FreeRTOS hart. Its reproducible QEMU/TAP acceptance test covers SMP,
 storage, networking, application protocols, trusted scheduling, and
 PMP-enforced memory isolation without depending on the public Internet.
 
@@ -383,9 +383,9 @@ protocol claims.
 
 ## Acknowledgements
 
-The kernel's educational design was inspired by Tsinghua University's
-open-source rCore project. Thanks to the rCore contributors for making
-operating-system concepts and implementation techniques accessible to learners.
+The kernel design draws on ideas from Tsinghua University's open-source rCore
+project. Thanks to the rCore contributors for making operating-system concepts
+and implementation techniques accessible to learners.
 The kernel in this repository is an independent C design and implementation.
 
 Project-owned code is distributed under the repository [MIT License](LICENSE).
