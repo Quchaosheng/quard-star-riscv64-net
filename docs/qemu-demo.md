@@ -2,10 +2,12 @@
 
 **English** | [简体中文](qemu-demo.zh-CN.md)
 
-The README demo is a compact replay of a real M8 QEMU/TAP acceptance run. It
-does not synthesize successful results: the renderer first validates the raw
-ordinary-kernel log, trusted UART2 log, and TAP peer statistics, then presents
-their accepted evidence as a readable 42-second video.
+The README demo is a compact, post-processed replay of a real M8 QEMU/TAP
+acceptance run. It does not invent successful results: the renderer first
+validates the raw ordinary-kernel log, trusted UART2 log, and TAP peer
+statistics, then presents their accepted evidence as a readable 42-second
+video. The output itself is synthesized with FFmpeg, not a screen recording or
+a live QEMU/terminal capture.
 
 ## Watch
 
@@ -78,11 +80,12 @@ Rendering is refused when any of the following conditions is true:
   reports outstanding TFTP packets.
 - The output is not 42-second H.264 video at 1280x720 with `yuv420p` pixels.
 
-The video and animated preview are explanatory artifacts, not additional acceptance authority.
-The raw logs, peer statistics, smoke-test exit status, and CI artifacts remain
-the authoritative evidence.
+The video and animated preview are explanatory artifacts, not additional
+acceptance authority or a recording of the run. The raw logs, peer statistics,
+smoke-test exit status, and CI artifacts remain the authoritative evidence.
 
-The scheduled, manually dispatched, and release-tag M8 workflow renders the
-same media after smoke acceptance. The regenerated MP4, poster, evidence JSON,
+The scheduled, manually dispatched, and release-tag M8 workflow renders a
+media set with the same renderer and format after smoke acceptance. The
+regenerated MP4, poster, evidence JSON,
 serial logs, and peer statistics are uploaded together in the
 `m8-serial-logs` workflow artifact.

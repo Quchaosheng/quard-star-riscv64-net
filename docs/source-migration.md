@@ -2,7 +2,9 @@
 
 **English** | [简体中文](source-migration.zh-CN.md)
 
-This repository starts with new Git history. First-party code is migrated selectively from immutable source revisions, without importing the old repositories' history or copying their bundled third-party trees.
+This repository starts with new Git history. Code maintained here was migrated
+selectively from the fixed source revisions below, without importing the old
+repositories' history or copying their bundled third-party trees.
 
 The original source repositories are no longer publicly available as of 2026-07-23. Their names and fixed revisions are retained below as historical migration records, but those revisions cannot currently be fetched independently from the public project.
 
@@ -13,4 +15,10 @@ The original source repositories are no longer publicly available as of 2026-07-
 
 The TCP/IP protocol core is migrated only from `code/pc/src/net`. The older `code/src/net`, `code/x86os-with-net`, and `chapter` trees are excluded as protocol-core sources.
 
-The kernel and TCP/IP stack are first-party implementations owned by the project author. QEMU, OpenSBI, FreeRTOS-Kernel, dtc/libfdt, FatFs, and nanoprintf remain third-party components under their upstream licenses; see [THIRD_PARTY.md](../THIRD_PARTY.md).
+The kernel/platform code and TCP/IP stack are maintained as project-owned code
+in this repository, with provenance limited to the fixed revisions above.
+Here, project-owned describes current maintenance and the repository's stated
+licensing; it does not claim independent authorship from those revisions or
+independently reproducible source retrieval. QEMU, OpenSBI, FreeRTOS-Kernel,
+dtc/libfdt, FatFs, and nanoprintf remain third-party components under their
+upstream licenses; see [THIRD_PARTY.md](../THIRD_PARTY.md).

@@ -7,13 +7,16 @@
 [![release](https://img.shields.io/github/v/release/Quchaosheng/quard-star-riscv64-net)](https://github.com/Quchaosheng/quard-star-riscv64-net/releases/latest)
 [![license](https://img.shields.io/github/license/Quchaosheng/quard-star-riscv64-net)](LICENSE)
 
-这是一个基于 rCore-Tutorial 设计、使用 C 语言重实现并运行在定制 QEMU
-quard-star 机器上的 RISC-V64 SMP 操作系统。项目集成 OpenSBI domain、专用的 FreeRTOS 可信 hart、
-VirtIO 块设备与网络设备、FatFs，以及内置 TCP/IP 协议栈。
+这是一个面向定制 QEMU quard-star 机器的 C 语言 RISC-V64 SMP 操作系统。其
+内核/平台代码和 TCP/IP 核心按[源码迁移](docs/source-migration.zh-CN.md)中记录的
+固定历史版本选择性迁移；这些原始仓库目前无法公开独立获取，因此固定版本是来源
+记录，不代表仍可独立取回的输入。系统设计参考 rCore-Tutorial，内置 TCP/IP 核心
+只有迁移记录中列出的唯一来源基线。项目集成 OpenSBI domain 配置、专用的 FreeRTOS
+可信 hart、VirtIO 块设备与网络设备以及 FatFs。
 
 当前 M8 配置启动 7 个运行 SMP 内核的 hart 和 1 个隔离的 FreeRTOS hart。
-可重复执行的 QEMU/TAP 验收测试覆盖 SMP、存储、网络、应用协议、可信调度和
-PMP 内存隔离，运行过程不依赖公网。
+可重复执行的 QEMU/TAP 验收测试覆盖 SMP、存储、网络、应用协议、可信调度，以及
+由 OpenSBI domain 配置并在 QEMU 中观测到的 PMP 强制内存访问隔离；运行过程不依赖公网。
 
 ## QEMU 演示
 
@@ -22,10 +25,10 @@ PMP 内存隔离，运行过程不依赖公网。
 该动图由已提交的证据回放 MP4 原始帧生成；点击可打开完整的 42 秒 MP4。
 
 这段 42 秒视频由一次真实通过的 M8 运行生成。渲染前，脚本会校验
-`qemu.log`、`trusted.log` 和 `m5-peer.stats` 中的每一项展示结果。动画本身由
-ffmpeg（`drawbox` + 字幕）合成，不是屏幕录制。配套的
-[证据清单](docs/assets/qemu-m8-demo-evidence.json)记录了源文件和媒体文件的
-SHA-256 摘要。
+`qemu.log`、`trusted.log` 和 `m5-peer.stats` 中的每一项展示结果。它是后处理的
+证据回放，不是屏幕录制，也不是 QEMU/终端的实时画面；ffmpeg 根据已校验的摘要
+用 `drawbox` 和字幕合成画面。配套的[证据清单](docs/assets/qemu-m8-demo-evidence.json)
+记录源文件和媒体文件的 SHA-256 摘要；媒体本身不构成额外的运行时证据。
 
 在 Ubuntu 24.04/26.04 或 WSL2 中完整复现运行和视频：
 
@@ -43,11 +46,11 @@ make demo
 | 领域 | 已实现范围 |
 | --- | --- |
 | CPU | RISC-V64；hart 0-6 运行同一个 SMP 内核，hart 7 运行独立 FreeRTOS domain |
-| 固件 | OpenSBI HSM、TIME、IPI、domain 配置和 PMP 隔离 |
+| 固件 | OpenSBI HSM、TIME、IPI、domain 配置，以及 QEMU 验证的 PMP 访问限制 |
 | 内核 | Sv39、每 hart 状态、调度、迁移、异常、中断、定时器、系统调用和同步 |
 | 存储 | 共用 VirtIO MMIO/virtqueue 层、VirtIO block、FatFs 和带代次校验的文件句柄 |
 | 网络 | VirtIO net、Ethernet、ARP、IPv4、ICMP、UDP、已测试的 TCP 子集、回环和 socket |
-| 应用 | Ping、已测试的 UDP/TCP echo 路径、DNS、HTTP、NTP，以及带 SHA-256 校验的 1 MiB TFTP 传输 |
+| 应用 | Ping、UDP 检查、基于 TCP 的 HTTP、DNS、NTP，以及带 SHA-256 校验的 1 MiB TFTP 传输 |
 | 可信运行时 | hart 7 上的 FreeRTOS S-mode 调度器、可信内存、UART2 和 SBI 定时器 tick |
 | 验证 | 主机测试、QEMU/TAP 冒烟测试、稳定串口标记、压力测试和性能报告 |
 
@@ -79,7 +82,7 @@ flowchart TB
     NET --> VNET["VirtIO net MMIO"]
     VNET <--> TAP["Linux TAP<br/>192.168.100.0/24"]
 
-    PMP["PMP 边界"] -. "禁止访问可信内存和 UART2" .-> UNTRUSTED
+    PMP["OpenSBI 配置的 PMP 边界"] -. "禁止访问可信内存和 UART2" .-> UNTRUSTED
     PMP -. "禁止访问普通内存和设备" .-> TRUSTED
 ```
 
@@ -201,13 +204,14 @@ QEMU、创建 TAP 接口或启动系统；系统本身通过 `make run` 或 `mak
 
 ```sh
 make m8-build
-make run
+sudo -E make m8-smoke
 ```
 
-`make m8-build` 会在 `out/m8` 下生成缓存构建产物。产物存在后，`make run` 是带缓存
-检查的本地 QEMU/TAP 启动与验收入口；它不会重新构建，而是通过 `sudo` 委托现有的
-`m8-smoke` 目标。缓存缺失时请先运行 `make m8-build`。`make m8-smoke` 仍是 CI 使用的
-直接完整冒烟验收目标。
+`make m8-build` 会在 `out/m8` 下生成构建产物。直接执行
+`sudo -E make m8-smoke` 是 CI 使用的、与当前源码构建相配套的完整验收入口。
+`make run` 只是重新运行缓存产物的便利包装：它只检查三个文件是否存在，不会重新
+构建，也不会验证这些文件是否来自当前工作树或 `HEAD`。因此，`make run` 通过只能
+证明缓存产物运行通过，不一定证明当前源码通过。
 
 冒烟测试会创建并配置 `tap0`，启动确定性的本地协议对端，启动完整的 8-hart
 机器，检查所有稳定标记，并在退出时清理网络资源。无需公网 DNS 和互联网连接。
@@ -253,8 +257,8 @@ flowchart TD
 | SMP | `QS:HART_ONLINE:0` 至 `QS:HART_ONLINE:6` |
 | 可信启动 | `QS:TRUSTED_READY` |
 | 可信调度 | 调度 tick 后出现 `QS:TRUSTED_SCHED_OK` |
-| 普通 domain 拒绝访问 | `QS:PMP_UNTRUSTED_DENY_OK` 及读、写、取指标记 |
-| 可信 domain 拒绝访问 | `QS:PMP_TRUSTED_DENY_OK` 及读、写、取指标记 |
+| 普通 domain 拒绝访问 | OpenSBI 配置的 PMP 权限；`QS:PMP_UNTRUSTED_DENY_OK` 及读、写、取指标记 |
+| 可信 domain 拒绝访问 | OpenSBI 配置的 PMP 权限；`QS:PMP_TRUSTED_DENY_OK` 及读、写、取指标记 |
 | 文件传输 | `QS:M7E_TFTP_1M_OK`，且对端无未完成数据包 |
 | 总体结果 | `QS:TEST_PASS:m8-smoke` 且不存在 `QS:TEST_FAIL` |
 
@@ -282,14 +286,17 @@ flowchart TD
     ARTIFACT --> RELEASE
 ```
 
-GitHub Actions 在每次 push 和 Pull Request 时运行主机测试。M8 每周运行、可
-手动触发，并会为每个 `v*` 发布标签自动运行。因此，发布标签在同一提交上同时
-具备快速主机测试证据和完整 QEMU/TAP 证据。
+GitHub Actions 在每次 push 和 Pull Request 时运行主机测试。主机 job 只运行主机
+测试，不能证明 QEMU、TAP、网络或 PMP 证据。M8 每周运行、可手动触发，并会为每个
+`v*` 发布标签自动运行；它不会为每次分支 push 或 Pull Request 都提供完整 QEMU 门槛。
+因此，只有 M8 job 通过时，发布标签才在同一提交上同时具备快速主机测试证据和完整
+QEMU/TAP 证据。
 
 `host-tests` job 中的 `make test-host` 只执行 Makefile 中 `test-host` 注册的脚本，
-不会启动 QEMU 或 TAP。M8 job 在 `make m8-build` 之后运行直接的 `make m8-smoke` 才会
-启动系统，随后运行 `make test-build`。本地已有缓存构建产物时，对应的 QEMU/TAP 启动
-与验收入口是 `make run`。
+不会启动 QEMU 或 TAP。M8 job 在 `make m8-build` 之后运行直接的
+`sudo -E make m8-smoke` 才会启动系统，随后运行 `make test-build`。运行时声明必须以
+M8 job 的串口日志、对端统计、冒烟退出状态和上传产物为依据；`make test-build` 是
+构建契约检查，不能替代冒烟验收。
 
 ## 实施里程碑
 
@@ -346,13 +353,14 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 `v1.0.2` 是维护版本，使发布标签执行完整 M8 验收工作流，并强化性能报告校验
 和输出回滚。它保留 `v1.0.1` 的维护内容，不扩展 `v1.0.0` 的协议或硬件支持边界。
 
-`v1.0.0` 在 hart 7 引入 S-mode FreeRTOS 调度器，以及 OpenSBI domain 间的
-双向 PMP 隔离。hart 7 获得 8 MiB 可信内存和 UART2，hart 0-6 无权访问它们。
+`v1.0.0` 在 hart 7 引入 S-mode FreeRTOS 调度器，以及 OpenSBI domain 配置的、
+在 QEMU 中进行双向探测的 PMP 权限。hart 7 获得 8 MiB 可信内存和 UART2；在经过
+测试的 QEMU 模型中，hart 0-6 无权访问它们。
 
 ## 当前边界
 
 - 仅支持 IPv4；未实现 IPv6、DHCP、TLS、HTTPS 和网络卸载。
-- TCP 覆盖三次握手、序号/确认处理、八种状态中的超时重传以及已测试的 echo/压力路径；被动关闭路径已简化，发送采用停等式单段（最大 512 B），固定 RTO 为 500 ms；未实现拥塞控制、RTT 估计和 SACK。
+- TCP 是经过测试的子集，不是完整 RFC 实现。累计 M8 验收只通过 HTTP 测试客户端路径；专门的 `m6c1-smoke`、`m6c2-smoke` 和 `m6c2-stress` 才分别覆盖已测试的握手、序号/确认、重传、关闭、监听/接收、echo 和压力路径。被动关闭路径已简化；发送采用停等式单段，单个载荷最多 512 B，固定 RTO 为 500 ms；未实现 TCP 选项、拥塞控制、RTT 估计和 SACK。
 - 验收网络固定为 `192.168.100.0/24`；公网连接是可选项。
 - TFTP 仅覆盖已测试的读取路径和 `windowsize=4`。
 - 文件层是小型 FatFs 测试接口，不是 POSIX VFS。
@@ -370,7 +378,7 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 | [QEMU 演示](docs/qemu-demo.zh-CN.md) | 复现或重新渲染已验证的 M8 视频 |
 | [当前限制](docs/limitations.zh-CN.md) | 安全、协议、平台和测试边界 |
 | [性能基线](docs/performance-baseline.zh-CN.md) | 产物报告和比较规则 |
-| [源码迁移](docs/source-migration.zh-CN.md) | 自有代码来源和迁移基线 |
+| [源码迁移](docs/source-migration.zh-CN.md) | 代码来源、归属措辞和迁移基线 |
 | [第三方清单](THIRD_PARTY.zh-CN.md) | 依赖版本与许可证 |
 
 ## 开发工作流
@@ -380,8 +388,7 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 ## 致谢
 
 内核设计参考了清华大学开源 rCore 项目的思路。感谢 rCore 贡献者让操作系统
-概念和实现技术更容易被学习者理解。本仓库中的内核是基于 rCore-Tutorial 设计的
-C 语言重实现。
+概念和实现技术更容易被学习者理解。代码来源见[源码迁移](docs/source-migration.zh-CN.md)。
 
 项目自有代码按仓库中的 [MIT License](LICENSE) 分发。捆绑的第三方组件保留
 各自的上游许可证。

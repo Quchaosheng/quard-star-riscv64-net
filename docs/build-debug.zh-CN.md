@@ -24,16 +24,17 @@ make deps
 make test-host
 ```
 
-构建并运行完整系统测试：
+构建并运行与当前源码绑定的完整系统验收：
 
 ```sh
 make m8-build
-make run
+sudo -E make m8-smoke
 ```
 
-`make run` 要求先由 `make m8-build` 生成缓存产物；它会检查缓存、不重新构建，
-并通过 `sudo` 委托 `m8-smoke`。按照 CI 冒烟命令操作时可直接使用
-`make m8-smoke`。
+CI 在构建后直接使用 `sudo -E make m8-smoke`。`make run` 要求先由
+`make m8-build` 生成缓存产物；它只检查缓存、不重新构建，并通过 `sudo` 委托
+`m8-smoke`。它不能证明缓存文件来自当前工作树或 `HEAD`；要把结论归于当前源码，
+请使用“构建后直接冒烟”的命令顺序。
 
 冒烟测试会创建 `tap0`、分配 `192.168.100.1/24`、启动本地原始数据包对端，
 并在退出时移除 TAP 设备。测试不使用公网 DNS 或互联网服务。
