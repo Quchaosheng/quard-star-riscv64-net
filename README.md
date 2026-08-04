@@ -218,6 +218,11 @@ artifact-dependent build contract and is not part of host-only testing. Host
 tests do not start QEMU, create a TAP interface, or boot the system; the
 system itself starts through `make run` or `make m8-smoke`.
 
+The `test-host` target contains 85 shell checks: 64 behavior, script, and
+runtime checks plus 21 source-contract checks. The separate `test-build`
+target adds one artifact-dependent build contract. These are script counts,
+not claims about individual assertions or QEMU runtime cases.
+
 ### Build and run the complete system
 
 ```sh
