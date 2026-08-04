@@ -4,8 +4,9 @@
 
 ## 环境
 
-请直接使用 Ubuntu 24.04/26.04，或通过 WSL2 使用。在构建前检查必需命令和
-开发头文件：
+请直接使用 Ubuntu 24.04/26.04，或通过 WSL2 使用。构建前，`make check-env` 会检查
+受支持的 Ubuntu 版本、必需命令、`glib-2.0` 与 `pixman-1` 的 pkg-config 条目，
+以及可链接的 `libfdt` 开发文件。它不会安装软件包或初始化子模块。
 
 ```sh
 make check-env
@@ -27,9 +28,12 @@ make test-host
 
 ```sh
 make m8-build
-sudo -v
-make m8-smoke
+make run
 ```
+
+`make run` 要求先由 `make m8-build` 生成缓存产物；它会检查缓存、不重新构建，
+并通过 `sudo` 委托 `m8-smoke`。按照 CI 冒烟命令操作时可直接使用
+`make m8-smoke`。
 
 冒烟测试会创建 `tap0`、分配 `192.168.100.1/24`、启动本地原始数据包对端，
 并在退出时移除 TAP 设备。测试不使用公网 DNS 或互联网服务。
