@@ -24,16 +24,19 @@ Run host tests without QEMU or TAP:
 make test-host
 ```
 
-Build and run the full system test:
+Build and run the source-tied full system acceptance test:
 
 ```sh
 make m8-build
-make run
+sudo -E make m8-smoke
 ```
 
-`make run` requires the cached artifacts produced by `make m8-build`; it checks
-the cache, does not rebuild, and delegates to `m8-smoke` with `sudo`. Use
-`make m8-smoke` directly when following the CI smoke command.
+`sudo -E make m8-smoke` is the direct command used by CI after the build.
+`make run` requires cached artifacts produced by `make m8-build`; it checks
+only that cache, does not rebuild, and delegates to `m8-smoke` with `sudo`. It
+does not establish that the cached files came from the current worktree or
+`HEAD`, so use the build-plus-direct-smoke sequence when the source itself is
+the subject of the claim.
 
 The smoke test creates `tap0`, assigns `192.168.100.1/24`, starts a local raw-packet peer, and removes the TAP device on exit. It does not use public DNS or Internet services.
 

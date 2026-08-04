@@ -4,7 +4,7 @@
 
 > 文档状态：历史设计基线；当前实现状态和已验证范围请以 [README](../README.zh-CN.md) 为准
 > 目标平台：Windows 11 + WSL2 Ubuntu 24.04/26.04 LTS + QEMU RISC-V64
-> 项目定位：独立实现的 RISC-V64 SMP 内核，集成 TCP/IP 协议栈、VirtIO 网络、用户态 Socket API 和独立的 FreeRTOS trusted domain
+> 项目定位：以固定历史源码为迁移基线、在本仓库中维护的 RISC-V64 SMP 内核，集成 TCP/IP 协议栈、VirtIO 网络、用户态 Socket API 和独立的 FreeRTOS trusted domain
 
 ## 1. 文档目的
 
@@ -107,9 +107,9 @@
 
 ### 3.5 版权与致谢
 
-- 新内核是参考 rCore 教学思路后独立设计和重构的 C 实现，按自有 MIT 代码管理。
+- 内核平台代码来自上述固定迁移基线；本仓库按新的目录和接口组织并维护这些代码。rCore 教学思路仅作为设计参考，不表示代码脱离迁移基线独立创作。
 - 根目录 `README.md` 在致谢章节说明 rCore 对教学思路的启发；致谢不表示代码依赖或派生关系。
-- `tiny-tcpip-stack` 迁移代码按自有 MIT 代码管理，并在 `README.md` 和迁移记录中注明来源仓库与固定提交。
+- `tiny-tcpip-stack` 迁移代码仅来自上述固定提交，并在 `README.md` 和迁移记录中注明来源仓库与固定提交；其当前维护和许可证说明不改变这一来源记录。
 - QEMU、OpenSBI、FreeRTOS-Kernel、FatFs、dtc/libfdt 和 nanoprintf 继续遵守各自许可证，不能用根目录 MIT License 覆盖。
 
 ## 4. 总体架构
