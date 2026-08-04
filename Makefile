@@ -1,4 +1,4 @@
-.PHONY: check-env deps check-sources test-host test-build demo demo-render m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke m7b-build m7b-smoke m7c-build m7c-smoke m7d-build m7d-smoke m7e-build m7e-smoke m8-build m8-smoke
+.PHONY: check-env deps check-sources test-host test-build demo demo-render run m1-build m1-smoke m2a-build m2a-smoke m2b-build m2b-smoke m2c-build m2c-smoke m2c-stress m3-build m3-smoke m3-stress m4-build m4-smoke m4-stress m5-build m5-smoke m6a-build m6a-smoke m6b-build m6b-smoke m6c1-build m6c1-smoke m6c2-build m6c2-smoke m6c2-stress m7a-build m7a-smoke m7b-build m7b-smoke m7c-build m7c-smoke m7d-build m7d-smoke m7e-build m7e-smoke m8-build m8-smoke
 
 check-env:
 	./scripts/check-env.sh
@@ -96,6 +96,15 @@ test-host:
 	./tests/host/test_docs_i18n.sh
 	./tests/host/test_performance_baseline.sh
 	./tests/host/test_demo_renderer.sh
+
+run:
+	@if [ ! -f "$(CURDIR)/out/m8/qemu/qemu-system-riscv64" ] || \
+	   [ ! -f "$(CURDIR)/out/m8/fw/fw.bin" ] || \
+	   [ ! -f "$(CURDIR)/out/m8/disk/disk.img" ]; then \
+	  echo "error: cached M8 build artifacts are missing under $(CURDIR)/out/m8; run 'make m8-build' first." >&2; \
+	  exit 1; \
+	fi
+	sudo -E $(MAKE) m8-smoke
 
 test-build:
 	./tests/host/test_m1_build_contracts.sh

@@ -41,7 +41,11 @@ new file mode 100644
 index 00000000..f7733516
 --- /dev/null
 +++ b/hw/riscv/quard_star.c
-@@ -0,0 +1,319 @@
+@@ -0,0 +1,323 @@
++/*
++ * QEMU RISC-V Quard Star Board - adapted from quard-star open source project
++ * SPDX-License-Identifier: GPL-2.0-or-later
++ */
 +#include "qemu/osdep.h"
 +#include "qemu/units.h"
 +#include "qemu/error-report.h"

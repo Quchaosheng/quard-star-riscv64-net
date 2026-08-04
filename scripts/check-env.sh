@@ -29,6 +29,23 @@ for cmd in git make gcc riscv64-unknown-elf-gcc dtc ninja meson pkg-config pytho
   fi
 done
 
+for cmd in flex bison; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "missing: $cmd" >&2
+    missing=1
+  fi
+done
+
+if ! pkg-config --exists glib-2.0; then
+  echo "missing: glib-2.0 development package (install libglib2.0-dev)" >&2
+  missing=1
+fi
+
+if ! pkg-config --exists pixman-1; then
+  echo "missing: pixman-1 development package (install libpixman-1-dev)" >&2
+  missing=1
+fi
+
 if command -v gcc >/dev/null 2>&1 && ! printf '%s\n' \
   '#include <libfdt.h>' 'int main(void) { return fdt_check_header(0); }' | \
   gcc -x c - -lfdt -o /dev/null >/dev/null 2>&1; then

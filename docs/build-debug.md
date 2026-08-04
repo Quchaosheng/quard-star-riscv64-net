@@ -4,7 +4,10 @@
 
 ## Environment
 
-Use Ubuntu 24.04 or 26.04, either directly or through WSL2. Check the required commands and development headers before building:
+Use Ubuntu 24.04 or 26.04, either directly or through WSL2. Before building,
+`make check-env` validates the supported Ubuntu version, required commands,
+the `glib-2.0` and `pixman-1` pkg-config entries, and linkable `libfdt`
+development files. It does not install packages or initialize submodules.
 
 ```sh
 make check-env
@@ -25,9 +28,12 @@ Build and run the full system test:
 
 ```sh
 make m8-build
-sudo -v
-make m8-smoke
+make run
 ```
+
+`make run` requires the cached artifacts produced by `make m8-build`; it checks
+the cache, does not rebuild, and delegates to `m8-smoke` with `sudo`. Use
+`make m8-smoke` directly when following the CI smoke command.
 
 The smoke test creates `tap0`, assigns `192.168.100.1/24`, starts a local raw-packet peer, and removes the TAP device on exit. It does not use public DNS or Internet services.
 

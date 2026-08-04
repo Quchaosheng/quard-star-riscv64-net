@@ -83,6 +83,10 @@ if grep -Fq 'submodules: recursive' "$workflow" "$smoke_workflow"; then
   exit 1
 fi
 grep -Fq 'run: make test-host' "$workflow"
+grep -Eq '^run:[[:space:]]*$' "$root/Makefile"
+grep -Fq 'sudo -E $(MAKE) m8-smoke' "$root/Makefile"
+grep -Fq 'make run' "$root/README.md"
+grep -Fq 'make run' "$root/README.zh-CN.md"
 host_action_refs=$tmp/host-action-refs
 smoke_action_refs=$tmp/smoke-action-refs
 collect_action_refs "$workflow" "$host_action_refs"

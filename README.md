@@ -7,8 +7,8 @@
 [![release](https://img.shields.io/github/v/release/Quchaosheng/quard-star-riscv64-net)](https://github.com/Quchaosheng/quard-star-riscv64-net/releases/latest)
 [![license](https://img.shields.io/github/license/Quchaosheng/quard-star-riscv64-net)](LICENSE)
 
-An independently implemented RISC-V64 SMP operating system for the custom QEMU
-quard-star machine. The project combines a C kernel, OpenSBI domains, a
+A C-language reimplementation of a RISC-V64 SMP operating system, built on
+rCore-Tutorial's design and targeting the custom QEMU quard-star machine. The project combines a C kernel, OpenSBI domains, a
 dedicated FreeRTOS trusted hart, VirtIO block and network devices, FatFs, and
 an in-tree TCP/IP stack.
 
@@ -25,8 +25,8 @@ Animated preview from the committed evidence replay. Click it to open the full 4
 
 The 42-second video is generated from a real, passing M8 run. Every displayed
 result is validated against `qemu.log`, `trusted.log`, and `m5-peer.stats`
-before rendering; it is an evidence replay rather than a hand-authored success
-animation. The accompanying [evidence manifest](docs/assets/qemu-m8-demo-evidence.json)
+before rendering. The animation itself is synthesized with ffmpeg (`drawbox` +
+subtitles), not a screen recording. The accompanying [evidence manifest](docs/assets/qemu-m8-demo-evidence.json)
 records the source and media SHA-256 digests.
 
 Reproduce the complete run and video on Ubuntu 24.04/26.04 or WSL2:
@@ -48,8 +48,8 @@ also regenerate the media and include it in the `m8-serial-logs` artifact.
 | Firmware | OpenSBI HSM, TIME, IPI, domain configuration, and PMP isolation |
 | Kernel | Sv39, per-hart state, scheduler, migration, traps, timers, syscalls, and synchronization |
 | Storage | Shared VirtIO MMIO/virtqueue layer, VirtIO block, FatFs, and generation-checked file handles |
-| Networking | VirtIO net, Ethernet, ARP, IPv4, ICMP, UDP, TCP, loopback, and sockets |
-| Applications | Ping, UDP/TCP echo, DNS, HTTP, NTP, and TFTP with a 1 MiB SHA-256-verified transfer |
+| Networking | VirtIO net, Ethernet, ARP, IPv4, ICMP, UDP, tested TCP subset, loopback, and sockets |
+| Applications | Ping, tested UDP/TCP echo paths, DNS, HTTP, NTP, and TFTP with a 1 MiB SHA-256-verified transfer |
 | Trusted runtime | FreeRTOS S-mode scheduler on hart 7, trusted RAM, UART2, and SBI timer ticks |
 | Verification | Host tests, QEMU/TAP smoke tests, stable serial markers, stress tests, and performance reports |
 
@@ -198,16 +198,24 @@ archive recorded in `third_party/fatfs.lock`.
 make test-host
 ```
 
-Host tests do not boot QEMU or create a TAP interface. They cover contracts,
-parsers, queues, protocol behavior, socket lifecycle, scripts, and CI policy.
+Host tests execute only the host-side scripts and contract checks registered
+under `test-host` in the Makefile. The separate `test-build` target is an
+artifact-dependent build contract and is not part of host-only testing. Host
+tests do not start QEMU, create a TAP interface, or boot the system; the
+system itself starts through `make run` or `make m8-smoke`.
 
 ### Build and run the complete system
 
 ```sh
 make m8-build
-sudo -v
-make m8-smoke
+make run
 ```
+
+`make m8-build` produces the cached artifacts under `out/m8`. After those
+artifacts exist, `make run` is the cache-guarded local QEMU/TAP startup and
+acceptance entry; it does not rebuild and delegates to the existing
+`m8-smoke` target with `sudo`. Run `make m8-build` first when the cache is
+missing. `make m8-smoke` remains the direct full smoke target used by CI.
 
 The smoke test creates and configures `tap0`, starts deterministic local
 protocol peers, boots the full eight-hart machine, checks all stable markers,
@@ -290,6 +298,12 @@ on manual dispatch, and automatically for every `v*` release tag. Tag releases
 therefore have both fast host-test evidence and full QEMU/TAP evidence at the
 exact tagged commit.
 
+The `host-tests` job's `make test-host` command is host-only and runs the
+scripts registered under `test-host`; it never starts QEMU or TAP. The M8 job
+starts the system only after `make m8-build`, by running the direct
+`make m8-smoke` target, and then runs `make test-build`. For a cached local
+build, `make run` is the corresponding QEMU/TAP startup and acceptance entry.
+
 ## Implementation milestones
 
 ```mermaid
@@ -360,6 +374,7 @@ region and UART2; harts 0-6 are denied both resources.
 ## Current boundaries
 
 - IPv4 only: no IPv6, DHCP, TLS, HTTPS, or network offloads.
+- TCP covers the three-way handshake, sequence/acknowledgement handling, timeout retransmission across eight states, and the tested echo/stress paths. Passive-close paths are simplified; transmission uses stop-and-wait single segments up to 512 B with a fixed 500 ms RTO. There is no congestion control, RTT estimation, or SACK.
 - Fixed `192.168.100.0/24` acceptance network; public connectivity is optional.
 - The TFTP implementation covers the tested read path and `windowsize=4`.
 - The file layer is a small FatFs test interface, not a POSIX VFS.
@@ -381,12 +396,20 @@ protocol claims.
 | [Source Migration](docs/source-migration.md) | First-party code provenance and migration baselines |
 | [Third-Party Inventory](THIRD_PARTY.md) | Dependency revisions and licenses |
 
+## Development Workflow
+
+This project combines direct implementation, upstream component integration,
+and AI-assisted iteration. Each claimed capability is reviewed against source
+code, tests, and QEMU/TAP acceptance markers. Plans and generated text are not
+treated as runtime evidence. The public Git history is kept unchanged.
+
 ## Acknowledgements
 
 The kernel design draws on ideas from Tsinghua University's open-source rCore
 project. Thanks to the rCore contributors for making operating-system concepts
 and implementation techniques accessible to learners.
-The kernel in this repository is an independent C design and implementation.
+The kernel in this repository is a C-language reimplementation built on
+rCore-Tutorial's design.
 
 Project-owned code is distributed under the repository [MIT License](LICENSE).
 Bundled third-party components retain their upstream licenses.

@@ -7,8 +7,8 @@
 [![release](https://img.shields.io/github/v/release/Quchaosheng/quard-star-riscv64-net)](https://github.com/Quchaosheng/quard-star-riscv64-net/releases/latest)
 [![license](https://img.shields.io/github/license/Quchaosheng/quard-star-riscv64-net)](LICENSE)
 
-这是一个运行在定制 QEMU quard-star 机器上的 RISC-V64 SMP 操作系统。项目以
-独立实现的 C 内核为核心，集成 OpenSBI domain、专用的 FreeRTOS 可信 hart、
+这是一个基于 rCore-Tutorial 设计、使用 C 语言重实现并运行在定制 QEMU
+quard-star 机器上的 RISC-V64 SMP 操作系统。项目集成 OpenSBI domain、专用的 FreeRTOS 可信 hart、
 VirtIO 块设备与网络设备、FatFs，以及内置 TCP/IP 协议栈。
 
 当前 M8 配置启动 7 个运行 SMP 内核的 hart 和 1 个隔离的 FreeRTOS hart。
@@ -22,8 +22,8 @@ PMP 内存隔离，运行过程不依赖公网。
 该动图由已提交的证据回放 MP4 原始帧生成；点击可打开完整的 42 秒 MP4。
 
 这段 42 秒视频由一次真实通过的 M8 运行生成。渲染前，脚本会校验
-`qemu.log`、`trusted.log` 和 `m5-peer.stats` 中的每一项展示结果，因此它是
-验收证据回放，而不是手工制作的成功动画。配套的
+`qemu.log`、`trusted.log` 和 `m5-peer.stats` 中的每一项展示结果。动画本身由
+ffmpeg（`drawbox` + 字幕）合成，不是屏幕录制。配套的
 [证据清单](docs/assets/qemu-m8-demo-evidence.json)记录了源文件和媒体文件的
 SHA-256 摘要。
 
@@ -46,8 +46,8 @@ make demo
 | 固件 | OpenSBI HSM、TIME、IPI、domain 配置和 PMP 隔离 |
 | 内核 | Sv39、每 hart 状态、调度、迁移、异常、中断、定时器、系统调用和同步 |
 | 存储 | 共用 VirtIO MMIO/virtqueue 层、VirtIO block、FatFs 和带代次校验的文件句柄 |
-| 网络 | VirtIO net、Ethernet、ARP、IPv4、ICMP、UDP、TCP、回环和 socket |
-| 应用 | Ping、UDP/TCP echo、DNS、HTTP、NTP，以及带 SHA-256 校验的 1 MiB TFTP 传输 |
+| 网络 | VirtIO net、Ethernet、ARP、IPv4、ICMP、UDP、已测试的 TCP 子集、回环和 socket |
+| 应用 | Ping、已测试的 UDP/TCP echo 路径、DNS、HTTP、NTP，以及带 SHA-256 校验的 1 MiB TFTP 传输 |
 | 可信运行时 | hart 7 上的 FreeRTOS S-mode 调度器、可信内存、UART2 和 SBI 定时器 tick |
 | 验证 | 主机测试、QEMU/TAP 冒烟测试、稳定串口标记、压力测试和性能报告 |
 
@@ -193,16 +193,21 @@ make deps
 make test-host
 ```
 
-主机测试不会启动 QEMU，也不会创建 TAP 接口。测试范围包括契约、解析器、
-队列、协议行为、socket 生命周期、脚本和 CI 策略。
+主机测试只执行 Makefile 中 `test-host` 注册的主机脚本和契约检查。单独的
+`test-build` 目标是依赖构建产物的构建契约，不属于仅主机测试。主机测试不会启动
+QEMU、创建 TAP 接口或启动系统；系统本身通过 `make run` 或 `make m8-smoke` 启动。
 
 ### 构建并运行完整系统
 
 ```sh
 make m8-build
-sudo -v
-make m8-smoke
+make run
 ```
+
+`make m8-build` 会在 `out/m8` 下生成缓存构建产物。产物存在后，`make run` 是带缓存
+检查的本地 QEMU/TAP 启动与验收入口；它不会重新构建，而是通过 `sudo` 委托现有的
+`m8-smoke` 目标。缓存缺失时请先运行 `make m8-build`。`make m8-smoke` 仍是 CI 使用的
+直接完整冒烟验收目标。
 
 冒烟测试会创建并配置 `tap0`，启动确定性的本地协议对端，启动完整的 8-hart
 机器，检查所有稳定标记，并在退出时清理网络资源。无需公网 DNS 和互联网连接。
@@ -281,6 +286,11 @@ GitHub Actions 在每次 push 和 Pull Request 时运行主机测试。M8 每周
 手动触发，并会为每个 `v*` 发布标签自动运行。因此，发布标签在同一提交上同时
 具备快速主机测试证据和完整 QEMU/TAP 证据。
 
+`host-tests` job 中的 `make test-host` 只执行 Makefile 中 `test-host` 注册的脚本，
+不会启动 QEMU 或 TAP。M8 job 在 `make m8-build` 之后运行直接的 `make m8-smoke` 才会
+启动系统，随后运行 `make test-build`。本地已有缓存构建产物时，对应的 QEMU/TAP 启动
+与验收入口是 `make run`。
+
 ## 实施里程碑
 
 ```mermaid
@@ -342,6 +352,7 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 ## 当前边界
 
 - 仅支持 IPv4；未实现 IPv6、DHCP、TLS、HTTPS 和网络卸载。
+- TCP 覆盖三次握手、序号/确认处理、八种状态中的超时重传以及已测试的 echo/压力路径；被动关闭路径已简化，发送采用停等式单段（最大 512 B），固定 RTO 为 500 ms；未实现拥塞控制、RTT 估计和 SACK。
 - 验收网络固定为 `192.168.100.0/24`；公网连接是可选项。
 - TFTP 仅覆盖已测试的读取路径和 `windowsize=4`。
 - 文件层是小型 FatFs 测试接口，不是 POSIX VFS。
@@ -362,10 +373,15 @@ Markdown 输出。时间数据只用于可比环境中的观测，不是跨主�
 | [源码迁移](docs/source-migration.zh-CN.md) | 自有代码来源和迁移基线 |
 | [第三方清单](THIRD_PARTY.zh-CN.md) | 依赖版本与许可证 |
 
+## 开发工作流
+
+项目包含直接实现、上游组件集成和 AI 辅助迭代。每项能力都通过源码、测试以及 QEMU/TAP 验收标记复核；计划文本和生成文本不作为运行证据。公开 Git 历史保持不改。
+
 ## 致谢
 
 内核设计参考了清华大学开源 rCore 项目的思路。感谢 rCore 贡献者让操作系统
-概念和实现技术更容易被学习者理解。本仓库中的内核是独立的 C 语言设计与实现。
+概念和实现技术更容易被学习者理解。本仓库中的内核是基于 rCore-Tutorial 设计的
+C 语言重实现。
 
 项目自有代码按仓库中的 [MIT License](LICENSE) 分发。捆绑的第三方组件保留
 各自的上游许可证。
