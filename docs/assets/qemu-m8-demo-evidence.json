@@ -30,10 +30,10 @@
     "width": 1280
   },
   "schema_version": 1,
-  "source_commit": "825c253f7a8e",
+  "source_commit": "8720478baa6acb627ebfec282fbc70b755310874",
   "source_sha256": {
     "peer_stats": "74c5a722c175ee25dd532fc0a1d5fad656c000ad8d96a348d89bcf48933a2f62",
     "qemu_log": "a34b2193ad5d1874209c47a5f5ac14c8b5b1d7bb5df2d72e255e16f41e70cde1",
     "trusted_log": "705d866c63ba498649e70969967210f798198149ef9d7316bef8e6a14306c327"
   }
-}\n
+}

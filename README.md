@@ -29,7 +29,9 @@ before rendering. The animation itself is synthesized with ffmpeg (`drawbox` +
 subtitles), not a screen recording. The accompanying [evidence manifest](docs/assets/qemu-m8-demo-evidence.json)
 records the source and media SHA-256 digests.
 
-Reproduce the complete run and video on Ubuntu 24.04/26.04 or WSL2:
+Reproduce the complete run and video on Ubuntu 24.04 or WSL2. The environment
+check also accepts 26.04, but current CI and retained run evidence cover 24.04
+only:
 
 ```sh
 make demo
@@ -116,9 +118,11 @@ sequenceDiagram
     T-->>T: Probe ordinary RAM denial
 ```
 
-M8 requires load, store, and instruction faults in both directions. The summary
-markers are `QS:PMP_UNTRUSTED_DENY_OK` and `QS:PMP_TRUSTED_DENY_OK`; trusted
-scheduling is accepted only after `QS:TRUSTED_SCHED_OK` appears on UART2.
+M8 requires load, store, and instruction faults in both directions. Resource
+boundaries are declared by the OpenSBI domain DTS files, and the repository's
+fault probes exercise the denied accesses before emitting the summary markers
+`QS:PMP_UNTRUSTED_DENY_OK` and `QS:PMP_TRUSTED_DENY_OK`; trusted scheduling is
+accepted only after `QS:TRUSTED_SCHED_OK` appears on UART2.
 
 ## Data paths
 
@@ -170,7 +174,9 @@ image from changing the result of the TFTP and FatFs acceptance path.
 
 ### Supported environment
 
-- Ubuntu 24.04 or 26.04, directly or through WSL2.
+- Ubuntu 24.04, directly or through WSL2 (current CI and retained run evidence).
+- Ubuntu 26.04 may pass `make check-env`, but it is not a current CI or retained
+  acceptance-evidence target.
 - A RISC-V bare-metal GCC/binutils toolchain.
 - Build tools and development headers checked by `make check-env`.
 - Linux TUN/TAP permissions for QEMU end-to-end tests.

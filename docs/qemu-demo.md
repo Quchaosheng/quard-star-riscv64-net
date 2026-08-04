@@ -19,8 +19,10 @@ source and output digests are recorded in
 
 ## Generate from scratch
 
-Use Ubuntu 24.04 or 26.04, directly or through WSL2. In addition to the normal
-M8 build and TAP dependencies, install `ffmpeg` and `ffprobe`:
+Use Ubuntu 24.04, directly or through WSL2. The environment check may accept
+26.04, but current CI and retained acceptance evidence cover Ubuntu 24.04 only.
+In addition to the normal M8 build and TAP dependencies, install `ffmpeg` and
+`ffprobe`:
 
 ```sh
 sudo apt-get update
