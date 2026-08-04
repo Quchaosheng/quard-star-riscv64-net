@@ -399,6 +399,7 @@ protocol claims.
 | [QEMU Demo](docs/qemu-demo.md) | Reproduce or re-render the verified M8 video |
 | [Current Limitations](docs/limitations.md) | Security, protocol, platform, and testing boundaries |
 | [Performance Baselines](docs/performance-baseline.md) | Artifact reporting and comparison rules |
+| [Engineering Case Studies](docs/case-studies/) | PMP probe design and timeout-safe network execution |
 | [Source Migration](docs/source-migration.md) | First-party code provenance and migration baselines |
 | [Third-Party Inventory](THIRD_PARTY.md) | Dependency revisions and licenses |
 
