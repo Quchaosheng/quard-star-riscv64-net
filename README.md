@@ -1,6 +1,6 @@
-# quard-star-riscv64-net
+﻿# quard-star-riscv64-net
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [绠€浣撲腑鏂嘳(README.zh-CN.md)
 
 [![host-tests](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/host-tests.yml/badge.svg)](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/host-tests.yml)
 [![m8-smoke](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/m8-smoke.yml/badge.svg)](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/m8-smoke.yml)
@@ -420,13 +420,6 @@ protocol claims.
 | [Performance Baselines](docs/performance-baseline.md) | Artifact reporting and comparison rules |
 | [Source Migration](docs/source-migration.md) | First-party code provenance and migration baselines |
 | [Third-Party Inventory](THIRD_PARTY.md) | Dependency revisions and licenses |
-
-## Development Workflow
-
-This project combines direct implementation, upstream component integration,
-and AI-assisted iteration. Each claimed capability is reviewed against source
-code, tests, and QEMU/TAP acceptance markers. Plans and generated text are not
-treated as runtime evidence. The public Git history is kept unchanged.
 
 ## Acknowledgements
 
