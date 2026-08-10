@@ -88,7 +88,7 @@
 
 ### 3.3 第三方代码与自有代码分离
 
-有正式 Git 上游的第三方项目使用固定提交的 Git submodule。只提供正式发布归档的上游使用固定版本、下载 URL 和 SHA-256 校验，自有修改以补丁或独立平台文件保存。FatFs 是首版唯一的归档依赖例外。
+有正式 Git 上游的第三方项目使用固定提交的 Git submodule。归档依赖使用固定提交或版本、下载 URL 和 SHA-256 校验，自有修改以补丁或独立平台文件保存。FatFs 是首版唯一的归档依赖例外。
 
 ### 3.4 自有源码迁移基线
 
@@ -338,7 +338,7 @@ quard-star-riscv64-net/
 | OpenSBI | SBI、HSM、domain | submodule + 平台补丁 | 必须 |
 | FreeRTOS-Kernel | hart 7 trusted domain | submodule + RISC-V port | 必须 |
 | dtc/libfdt | 编译和解析设备树 | submodule | 必须 |
-| FatFs | VirtIO block 文件系统 | 官方 R0.15 归档 + SHA-256 + port | 必须 |
+| FatFs | VirtIO block 文件系统 | R0.15 镜像 commit 归档 + SHA-256 + port | 必须 |
 | nanoprintf | 内核和用户态格式化输出 | submodule | 必须 |
 | Mbed TLS | TLS/HTTPS | submodule | 1.0 后再评估 |
 | picolibc | 用户态 C 库 | submodule | 1.0 后再评估 |
@@ -350,7 +350,7 @@ M0 必须先完成依赖锁定，才能进入构建迁移：
 - QEMU 基线为官方 `v8.0.2`，只应用 `patches/qemu/series` 中按顺序列出的补丁。
 - OpenSBI 基线为官方 `v1.2`，quard-star 平台代码以独立目录或补丁接入。
 - FreeRTOS-Kernel、dtc/libfdt 和 nanoprintf 使用正式上游 URL，并由 submodule SHA 固定；禁止使用来源不明的镜像仓库。
-- FatFs 从 Elm-Chan 官方 R0.15 归档获取，首次确认后把 URL 和 SHA-256 写入 `THIRD_PARTY.md`，后续构建只接受该校验值。
+- FatFs 使用公开镜像中与 Elm-Chan R0.15 对应的固定 commit 归档，并把 commit、URL 和 SHA-256 写入 `THIRD_PARTY.md`；后续构建只接受该校验值。
 - `THIRD_PARTY.md` 记录人类可读信息，`.gitmodules` 和 gitlink 记录机器可验证 URL 与 SHA。
 - `make deps` 执行 `git submodule status --recursive`、补丁 `git apply --check` 和干净工作树检查，任何一项失败立即退出。
 
@@ -1214,7 +1214,7 @@ git submodule status --recursive
 
 - 新 Git 历史只有新账号作者。
 - Windows 11 + WSL2 Ubuntu 24.04或26.04 LTS 文档可从空环境复现。
-- QEMU、OpenSBI、FreeRTOS、dtc/libfdt 和 nanoprintf 均为固定 submodule，FatFs 为固定 SHA-256 的官方归档。
+- QEMU、OpenSBI、FreeRTOS、dtc/libfdt 和 nanoprintf 均为固定 submodule，FatFs 为固定 commit 与 SHA-256 的公开镜像归档。
 - hart 0-6 运行 SMP 内核，hart 7 运行 trusted FreeRTOS。
 - VirtIO block、FatFs 和 VirtIO net 稳定运行。
 - TAP 上可以观察和验证 ARP、ICMP、UDP 和 TCP。

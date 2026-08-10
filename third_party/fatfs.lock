@@ -1,3 +1,5 @@
 version=R0.15
-url=https://elm-chan.org/fsw/ff/arc/ff15.zip
-sha256=e0d76654d877e6c74be5ea3c395808794d495169514e98cbf6046168b8f4f070
+source_commit=b11f08931929e5f2f1fe8a3a2c0bd16d222b5625
+url=https://github.com/abbrev/fatfs/archive/b11f08931929e5f2f1fe8a3a2c0bd16d222b5625.zip
+sha256=eeee66a326aaa846c772586ee1b40a601532cc43423262a07aa11ce582be5900
+archive_prefix=fatfs-b11f08931929e5f2f1fe8a3a2c0bd16d222b5625/
