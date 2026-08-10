@@ -25,11 +25,11 @@ import sys
 import zipfile
 
 members = {
-    "source/ff.c": "ff source\n",
-    "source/ff.h": "ff header\n",
-    "source/diskio.h": "disk header\n",
-    "documents/documents.html": "not allowlisted\n",
-    "LICENSE.txt": "FatFs license\n",
+    "fatfs-R0.15/source/ff.c": "ff source\n",
+    "fatfs-R0.15/source/ff.h": "ff header\n",
+    "fatfs-R0.15/source/diskio.h": "disk header\n",
+    "fatfs-R0.15/documents/documents.html": "not allowlisted\n",
+    "fatfs-R0.15/LICENSE.txt": "FatFs license\n",
 }
 with zipfile.ZipFile(sys.argv[1], "w") as archive:
     for name, contents in members.items():
@@ -41,6 +41,7 @@ cat > "$project/third_party/fatfs.lock" <<EOF
 version=R0.15
 url=https://example.invalid/ff15.zip
 sha256=$hash
+archive_prefix=fatfs-R0.15/
 EOF
 
 QS_ROOT="$project" "$project/scripts/prepare-fatfs.sh" || \
