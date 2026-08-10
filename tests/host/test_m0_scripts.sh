@@ -28,7 +28,7 @@ ID=ubuntu
 VERSION_ID=26.04
 EOF
 
-for cmd in git make gcc riscv64-unknown-elf-gcc dtc ninja meson pkg-config python3 ip tcpdump curl sha256sum; do
+for cmd in git make gcc riscv64-unknown-elf-gcc dtc ninja meson pkg-config python3 ip tcpdump curl sha256sum ffmpeg; do
   printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/$cmd"
   chmod +x "$tmp/bin/$cmd"
 done
@@ -67,6 +67,7 @@ cat > "$tmp/project/third_party/fatfs.lock" <<EOF
 version=R0.15
 url=https://example.invalid/ff15.zip
 sha256=$fatfs_hash
+archive_prefix=
 EOF
 
 QS_ROOT="$tmp/project" "$root/scripts/fetch-fatfs.sh" --check || fail "valid FatFs archive should pass"
