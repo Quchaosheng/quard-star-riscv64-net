@@ -1,6 +1,6 @@
-﻿# quard-star-riscv64-net
+# quard-star-riscv64-net
 
-**English** | [绠€浣撲腑鏂嘳(README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md)
 
 [![host-tests](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/host-tests.yml/badge.svg)](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/host-tests.yml)
 [![m8-smoke](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/m8-smoke.yml/badge.svg)](https://github.com/Quchaosheng/quard-star-riscv64-net/actions/workflows/m8-smoke.yml)
