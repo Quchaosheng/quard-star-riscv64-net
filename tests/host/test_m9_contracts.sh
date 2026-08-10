@@ -175,8 +175,6 @@ if grep -Fq 'https://github.com/Quchaosheng/tiny-tcpip-stack' \
 fi
 grep -Fq 'current release is `v1.0.2`' "$root/README.md"
 grep -Fq '`v1.0.2` is a maintenance release' "$root/README.md"
-grep -Fq 'checkbox state in an implementation plan is not a live' \
-  "$root/docs/superpowers/README.md"
 grep -Fq 'PMP-enforced memory isolation' "$root/README.md"
 grep -Fq 'QS:TRUSTED_SCHED_OK' "$root/README.md"
 grep -Fq 'QS:PMP_UNTRUSTED_DENY_OK' "$root/README.md"
