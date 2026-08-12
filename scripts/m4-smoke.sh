@@ -8,7 +8,7 @@ test_name=${QS_TEST_NAME:-m4-smoke}
 iface=${QS_TAP_IFACE:-tap0}
 count=${QS_NET_ITERATIONS:-32}
 resets=${QS_NET_RESETS:-1}
-peer=${QS_M4_PEER:-$script_root/scripts/m4-peer.py}
+peer=${QS_M4_PEER:-$root/out/host-tools/m4-peer}
 out=$root/out/$stage
 ready=$out/m4-peer.ready
 stats=$out/m4-peer.stats
@@ -40,6 +40,11 @@ cleanup()
 trap cleanup EXIT INT TERM
 
 mkdir -p "$out"
+if [ -z "${QS_M4_PEER:-}" ]; then
+  mkdir -p "$(dirname "$peer")"
+  "${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror \
+    "$script_root/scripts/m4-peer.c" -o "$peer"
+fi
 rm -f "$ready" "$stats" "$created"
 : >"$ready"
 : >"$stats"
@@ -54,9 +59,7 @@ set -- "$peer" "$iface" --count "$count" \
 peer_needs_sudo=0
 if [ "${QS_FORCE_PEER_SUDO:-0}" = 1 ]; then
   peer_needs_sudo=1
-elif [ "$(id -u)" -ne 0 ] && ! python3 -c \
-  'import socket; socket.socket(socket.AF_PACKET, socket.SOCK_RAW, 0).close()' \
-  >/dev/null 2>&1; then
+elif [ "$(id -u)" -ne 0 ] && ! "$peer" --probe-raw >/dev/null 2>&1; then
   peer_needs_sudo=1
 fi
 if [ "$peer_needs_sudo" -eq 1 ]; then
