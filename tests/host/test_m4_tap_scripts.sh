@@ -100,49 +100,8 @@ fi
 grep -Fq 'addr add' "$tmp/failure.out"
 unset FAKE_IP_FAIL
 
-PYTHONDONTWRITEBYTECODE=1 python3 - "$root" <<'PY'
-import importlib.util
-import pathlib
-import struct
-import sys
-
-root = pathlib.Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("m4_peer", root / "scripts/m4-peer.py")
-peer = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(peer)
-
-sequence = 7
-payload = bytes((sequence ^ offset ^ 0x5A) & 0xFF for offset in range(32))
-body = struct.pack("!IH", sequence, len(payload)) + payload
-body += struct.pack("!I", peer.payload_checksum(payload))
-request = peer.BROADCAST + peer.GUEST_MAC + struct.pack("!H", peer.ETHERTYPE) + body
-request = request.ljust(60, b"\0")
-assert peer.decode_request(request) == (sequence, payload)
-
-response = peer.encode_response(sequence, payload)
-assert len(response) == 60
-assert response[:6] == peer.GUEST_MAC
-assert response[6:12] == peer.HOST_MAC
-
-bad_frames = [
-    request[:20],
-    b"\0" * 6 + request[6:],
-    request[:12] + struct.pack("!H", 0x0800) + request[14:],
-    request[:18] + struct.pack("!H", 1000) + request[20:],
-    request[:52] + b"\0\0\0\0" + request[56:],
-]
-bad_payload = bytearray(request)
-bad_payload[20] ^= 1
-bad_payload[52:56] = struct.pack("!I", peer.payload_checksum(bad_payload[20:52]))
-bad_frames.append(bytes(bad_payload))
-for frame in bad_frames:
-    try:
-        peer.decode_request(frame)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("malformed M4 frame accepted")
-PY
+"${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror \
+  "$root/scripts/m4-peer.c" -o "$tmp/m4-peer"
+"$tmp/m4-peer" --self-test
 
 echo 'PASS: M4 TAP scripts and raw peer helpers'
