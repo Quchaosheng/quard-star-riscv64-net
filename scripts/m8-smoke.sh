@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -eu
 root=${QS_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
+# The identity of the build under test travels with the run, so a cached run
+# cannot be mistaken for current-source evidence.
+export QS_M8_BUILD_IDENTITY=${QS_M8_BUILD_IDENTITY:-$(git -C "$root" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}
+echo "QS:M8_BUILD_IDENTITY:$QS_M8_BUILD_IDENTITY"
 export QS_ROOT=$root QS_STAGE=m8 QS_TEST_NAME=m8-smoke
 export QS_SMP=8 QS_REQUIRED_HARTS="0 1 2 3 4 5 6"
 export QS_TRUSTED_SERIAL_LOG=$root/out/m8/trusted.log

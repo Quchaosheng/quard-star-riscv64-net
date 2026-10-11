@@ -32,11 +32,13 @@ sudo -E make m8-smoke
 ```
 
 `sudo -E make m8-smoke` is the direct command used by CI after the build.
-`make run` requires cached artifacts produced by `make m8-build`; it checks
-only that cache, does not rebuild, and delegates to `m8-smoke` with `sudo`. It
-does not establish that the cached files came from the current worktree or
-`HEAD`, so use the build-plus-direct-smoke sequence when the source itself is
-the subject of the claim.
+`make run` requires cached artifacts produced by `make m8-build`, does not
+rebuild, and delegates to `m8-smoke` with `sudo`, but first verifies
+`out/m8/manifest.json` against the current worktree. Changed sources, a changed
+patch or dependency lock, a replaced artifact, a different commit, or a missing
+manifest all stop the run with the reason and a `make m8-build` instruction.
+Use `QS_ALLOW_STALE_ARTIFACT=1 make run` to run an older build on purpose; the
+run and its evidence then carry `QS:M8_BUILD_IDENTITY` naming that build.
 
 The smoke test creates `tap0`, assigns `192.168.100.1/24`, starts a local raw-packet peer, and removes the TAP device on exit. It does not use public DNS or Internet services.
 
