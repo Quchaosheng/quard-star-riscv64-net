@@ -87,6 +87,22 @@ if python3 "$root/scripts/render-demo.py" \
   exit 1
 fi
 
+# A cached run reports the identity of the build it exercised, not HEAD.
+QS_M8_BUILD_IDENTITY='abcdef123456 (dirty worktree)' \
+  python3 "$root/scripts/render-demo.py" \
+  --qemu-log "$qemu" --trusted-log "$trusted" --peer-stats "$stats" \
+  --validate-only >"$tmp/identity.json"
+python3 - "$tmp/identity.json" <<'PY'
+import json
+import pathlib
+import sys
+
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if data["source_commit"] != "abcdef123456 (dirty worktree)":
+    raise SystemExit("FAIL: evidence must carry the exercised build identity, "
+                     "not HEAD; got %r" % data["source_commit"])
+PY
+
 grep -Fq 'demo: m8-build' "$root/Makefile"
 grep -Fq 'sudo -E $(MAKE) m8-smoke' "$root/Makefile"
 grep -Fq 'python3 ./scripts/render-demo.py' "$root/Makefile"

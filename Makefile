@@ -92,19 +92,14 @@ test-host:
 	./tests/host/test_m7e_peer.sh
 	./tests/host/test_m7e_smoke_script.sh
 	./tests/host/test_m8_contracts.sh
+	./tests/host/test_m8_artifact_provenance.sh
 	./tests/host/test_m9_contracts.sh
 	./tests/host/test_docs_i18n.sh
 	./tests/host/test_performance_baseline.sh
 	./tests/host/test_demo_renderer.sh
 
 run:
-	@if [ ! -f "$(CURDIR)/out/m8/qemu/qemu-system-riscv64" ] || \
-	   [ ! -f "$(CURDIR)/out/m8/fw/fw.bin" ] || \
-	   [ ! -f "$(CURDIR)/out/m8/disk/disk.img" ]; then \
-	  echo "error: cached M8 build artifacts are missing under $(CURDIR)/out/m8; run 'make m8-build' first." >&2; \
-	  exit 1; \
-	fi
-	sudo -E $(MAKE) m8-smoke
+	./scripts/m8-run.sh
 
 test-build:
 	./tests/host/test_m1_build_contracts.sh

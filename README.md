@@ -218,7 +218,7 @@ artifact-dependent build contract and is not part of host-only testing. Host
 tests do not start QEMU, create a TAP interface, or boot the system; the
 system itself starts through `make run` or `make m8-smoke`.
 
-The `test-host` target contains 85 shell checks: 64 behavior, script, and
+The `test-host` target contains 86 shell checks: 65 behavior, script, and
 runtime checks plus 21 source-contract checks. The separate `test-build`
 target adds one artifact-dependent build contract. These are script counts,
 not claims about individual assertions or QEMU runtime cases.
@@ -230,12 +230,26 @@ make m8-build
 sudo -E make m8-smoke
 ```
 
-`make m8-build` produces artifacts under `out/m8`. The direct
-`sudo -E make m8-smoke` command is the source-tied full acceptance entry used
-by CI. `make run` is only a convenience wrapper for rerunning cached
-artifacts: it checks for three files, does not rebuild, and does not verify
-that those files came from the current worktree or `HEAD`. A passing `make run`
-therefore proves the cached artifact run, not necessarily the current source.
+`make m8-build` produces artifacts under `out/m8` and writes
+`out/m8/manifest.json`, which records the commit, the tree digest including
+uncommitted and untracked changes, the pinned submodule and patch identities,
+the FatFs lock digest, the toolchain version, and a digest for each cached
+artifact. The direct `sudo -E make m8-smoke` command is the source-tied full
+acceptance entry used by CI.
+
+`make run` reruns the cached artifacts without rebuilding, but only after
+`scripts/m8-manifest.sh verify` confirms that the cache belongs to the current
+worktree and dependency set. A changed kernel, trusted, platform, patch or
+dependency input, a replaced artifact, a different commit, or a missing
+manifest fails the run with a named reason and a `make m8-build` instruction
+instead of silently presenting stale output as current-source validation. When
+the manifest matches, the run proceeds with no rebuild.
+
+Running a deliberately older build is still possible with
+`QS_ALLOW_STALE_ARTIFACT=1 make run`. That path warns on stderr, and the run,
+its logs, and its rendered evidence all carry `QS:M8_BUILD_IDENTITY` with the
+identity of the build that actually executed, so old-build evidence cannot be
+read as current-source evidence.
 
 The smoke test creates and configures `tap0`, starts deterministic local
 protocol peers, boots the full eight-hart machine, checks all stable markers,

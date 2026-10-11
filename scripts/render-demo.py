@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -131,6 +132,11 @@ def sha256(path: pathlib.Path) -> str:
 def source_commit(explicit: str | None) -> str:
     if explicit:
         return explicit
+    # A cached run reports the identity of the build it exercised, which is not
+    # necessarily HEAD; prefer that over the current checkout.
+    identity = os.environ.get("QS_M8_BUILD_IDENTITY")
+    if identity:
+        return identity
     try:
         return subprocess.run(
             ["git", "rev-parse", "--short=12", "HEAD"],
