@@ -4,7 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
   workflow_dispatch:
+    inputs:
+      force_full:
+        description: 'Run the full M8 acceptance tier even when changed paths select none'
+        type: boolean
+        default: true
   schedule:
     - cron: '30 18 * * 0'
 
@@ -18,8 +24,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          # A pull request diff needs the base commit to classify changed paths.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
           submodules: true
+      - name: Select runtime tier from changed paths
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          tier=$(git diff --name-only -z --diff-filter=ACDMRTUXB \
+            "$BASE_SHA...$HEAD_SHA" | ./scripts/m8-paths.sh)
+          if [ "${{ inputs.force_full }}" = 'true' ]; then
+            echo "changed-path tier: $tier (manual override forces full)"
+            tier=full
+          fi
+          echo "tier=$tier" >> "$GITHUB_ENV"
+          if [ "$tier" = none ]; then
+            echo "QS_M8_SKIP=1" >> "$GITHUB_ENV"
+          fi
       - name: Install build and TAP dependencies
+        if: env.QS_M8_SKIP != '1'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -29,30 +55,63 @@ jobs:
             libglib2.0-dev libpixman-1-dev zlib1g-dev libslirp-dev \
             flex bison bc iproute2 tcpdump curl ffmpeg
       - uses: actions/cache@v6
+        if: env.QS_M8_SKIP != '1'
         with:
           path: ~/.cache/quard-star-riscv64-net
           key: m8-${{ runner.os }}-${{ hashFiles('patches/**', '.gitmodules') }}
       - name: Prepare FatFs
+        if: env.QS_M8_SKIP != '1'
         run: ./scripts/prepare-fatfs.sh
       - name: Build M8 firmware
+        if: env.QS_M8_SKIP != '1'
         run: make m8-build
+      - name: Report runtime tier and source identity
+        if: always()
+        run: |
+          echo "runtime tier: ${tier:-full}"
+          echo "source revision: $GITHUB_SHA"
+          echo "cache key: m8-${RUNNER_OS}-$(git rev-parse HEAD)"
+      - name: Start M8 run timer
+        if: always() && env.QS_M8_SKIP != '1'
+        run: date +%s > out/m8/run-start.txt
       - name: Run M8 QEMU/TAP smoke
+        if: always() && env.QS_M8_SKIP != '1'
         run: sudo -E make m8-smoke
       - name: Render M8 evidence video
+        if: always() && env.QS_M8_SKIP != '1'
         run: |
           python3 scripts/render-demo.py \
             --output out/m8/demo/qemu-m8-demo.mp4 \
             --poster out/m8/demo/qemu-m8-demo-poster.png \
             --preview out/m8/demo/qemu-m8-demo.gif \
             --evidence out/m8/demo/qemu-m8-demo-evidence.json
+      - name: Report M8 runtime and cost accounting
+        if: always() && env.QS_M8_SKIP != '1'
+        run: |
+          start=$(cat out/m8/run-start.txt)
+          seconds=$(( $(date +%s) - start ))
+          echo "m8 smoke wall time: ${seconds}s"
+          du -sh out/m8 2>/dev/null || true
+          du -sh ~/.cache/quard-star-riscv64-net 2>/dev/null || true
+          echo "runner minutes for this job are billed by GitHub; this timer covers"
+          echo "the smoke stage only, so the tier decision can be revisited on evidence."
       - name: Run build contracts
+        if: always() && env.QS_M8_SKIP != '1'
         run: make test-build
+      - name: Bind artifacts to the tested source revision
+        if: always()
+        run: |
+          mkdir -p out/m8
+          printf '%s\n' "$GITHUB_SHA" > out/m8/source-revision.txt
       - name: Upload serial logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: m8-serial-logs
+          name: m8-serial-logs-${{ github.run_id }}
+          retention-days: 14
           path: |
+            out/m8/source-revision.txt
+            out/m8/run-start.txt
             out/m8/qemu.log
             out/m8/qemu.err
             out/m8/kernel.log
@@ -63,3 +122,7 @@ jobs:
             out/m8/demo/qemu-m8-demo-poster.png
             out/m8/demo/qemu-m8-demo-evidence.json
           if-no-files-found: ignore
+          overwrite: true
+      - name: Remove generated build output
+        if: always()
+        run: rm -rf out/m8

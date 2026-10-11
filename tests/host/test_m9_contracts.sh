@@ -127,7 +127,7 @@ awk '
   found && /^  [^[:space:]#][^:]*:[[:space:]]*$/ && $0 != "  qemu-smoke:" { exit }
   found { print }
 ' "$smoke_workflow" > "$smoke_job"
-smoke_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+smoke_count=$(grep -Ec 'run: sudo -E make m8-smoke[[:space:]]*$' \
   "$smoke_job" || true)
 build_test_count=$(grep -Ec '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
   "$smoke_job" || true)
@@ -135,7 +135,7 @@ if [ "$smoke_count" -ne 1 ] || [ "$build_test_count" -ne 1 ]; then
   echo 'FAIL: qemu-smoke must run smoke and build contracts exactly once' >&2
   exit 1
 fi
-smoke_line=$(grep -En '^[[:space:]]+run:[[:space:]]+sudo -E make m8-smoke[[:space:]]*$' \
+smoke_line=$(grep -En 'run: sudo -E make m8-smoke[[:space:]]*$' \
   "$smoke_job" | cut -d: -f1)
 build_test_line=$(grep -En '^[[:space:]]+run:[[:space:]]+make test-build[[:space:]]*$' \
   "$smoke_job" | cut -d: -f1)
@@ -144,6 +144,47 @@ if [ -z "$smoke_line" ] || [ -z "$build_test_line" ] ||
   echo 'FAIL: build contracts must run after M8 smoke acceptance' >&2
   exit 1
 fi
+grep -Eq '^[[:space:]]+pull_request:[[:space:]]*$' "$release_trigger" || {
+  echo 'FAIL: m8-smoke must run the runtime tier on pull requests' >&2
+  exit 1
+}
+grep -Fq './scripts/m8-paths.sh' "$smoke_job" || {
+  echo 'FAIL: changed paths must select the runtime tier' >&2
+  exit 1
+}
+grep -Fq 'git diff --name-only -z --diff-filter=ACDMRTUXB' "$smoke_job" || {
+  echo 'FAIL: the tier selector must diff the pull request base against its head' >&2
+  exit 1
+}
+grep -Fq 'fetch-depth: ${{ github.event_name == '\''pull_request'\'' && 0 || 1 }}' \
+  "$smoke_job" || {
+  echo 'FAIL: only pull request runs need full history for the base diff' >&2
+  exit 1
+}
+grep -Fq 'inputs.force_full' "$smoke_job" || {
+  echo 'FAIL: manual dispatch must be able to force the full M8 tier' >&2
+  exit 1
+}
+grep -Fq "QS_M8_SKIP=1" "$smoke_job" || {
+  echo 'FAIL: a docs-only pull request must skip the runtime tier' >&2
+  exit 1
+}
+grep -Fq 'source-revision.txt' "$smoke_job" || {
+  echo 'FAIL: uploaded artifacts must record the tested source revision' >&2
+  exit 1
+}
+grep -Eq '^[[:space:]]+retention-days: [0-9]+$' "$smoke_job" || {
+  echo 'FAIL: runtime artifacts need bounded retention' >&2
+  exit 1
+}
+grep -Eq '^[[:space:]]+run: rm -rf out/m8$' "$smoke_job" || {
+  echo 'FAIL: qemu-smoke must remove its generated build output' >&2
+  exit 1
+}
+grep -Fq 'run-start.txt' "$smoke_job" || {
+  echo 'FAIL: the runtime tier must record its own cost measurement' >&2
+  exit 1
+}
 action_refs=$tmp/action-refs
 collect_action_refs "$smoke_job" "$action_refs"
 cache_refs=$(grep -Ec '^actions/cache@' "$action_refs" || true)

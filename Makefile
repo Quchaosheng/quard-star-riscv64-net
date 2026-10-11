@@ -92,6 +92,8 @@ test-host:
 	./tests/host/test_m7e_peer.sh
 	./tests/host/test_m7e_smoke_script.sh
 	./tests/host/test_m8_contracts.sh
+	./tests/host/test_m8_paths.sh
+	./tests/host/test_m8_smoke_script.sh
 	./tests/host/test_m9_contracts.sh
 	./tests/host/test_docs_i18n.sh
 	./tests/host/test_performance_baseline.sh

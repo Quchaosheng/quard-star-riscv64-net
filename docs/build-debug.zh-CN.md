@@ -36,6 +36,11 @@ CI 在构建后直接使用 `sudo -E make m8-smoke`。`make run` 要求先由
 `m8-smoke`。它不能证明缓存文件来自当前工作树或 `HEAD`；要把结论归于当前源码，
 请使用“构建后直接冒烟”的命令顺序。
 
+在 Pull Request 上，CI job 会用 `scripts/m8-paths.sh` 以基线提交比对差异：
+仅文档改动会跳过运行时层级，其他任何改动都运行完整 M8 验收层级。可本地运行
+`git diff --name-only -z "$BASE...$HEAD" | ./scripts/m8-paths.sh` 查看所选层级，
+或手动触发工作流并设置 `force_full`，以在任意变更路径下强制使用完整层级。
+
 冒烟测试会创建 `tap0`、分配 `192.168.100.1/24`、启动本地原始数据包对端，
 并在退出时移除 TAP 设备。测试不使用公网 DNS 或互联网服务。
 

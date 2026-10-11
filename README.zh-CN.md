@@ -277,6 +277,9 @@ flowchart TD
     TAG --> M8["m8-smoke 工作流"]
     WEEKLY["每周定时"] --> M8
     MANUAL["手动触发"] --> M8
+    PR["Pull Request"] --> PATHS["按变更路径分类"]
+    PATHS --> M8
+    PATHS -->|"仅文档"| SKIP["跳过运行时层级"]
 
     M8 --> CHECKOUT["检出直接子模块"]
     CHECKOUT --> DEPS["安装工具、恢复缓存、准备 FatFs"]
@@ -292,15 +295,22 @@ flowchart TD
 
 GitHub Actions 在每次 push 和 Pull Request 时运行主机测试。主机 job 只运行主机
 测试，不能证明 QEMU、TAP、网络或 PMP 证据。M8 每周运行、可手动触发，并会为每个
-`v*` 发布标签自动运行；它不会为每次分支 push 或 Pull Request 都提供完整 QEMU 门槛。
-因此，只有 M8 job 通过时，发布标签才在同一提交上同时具备快速主机测试证据和完整
-QEMU/TAP 证据。
+`v*` 发布标签自动运行。Pull Request 按变更路径纳入：`scripts/m8-paths.sh` 以
+Pull Request 基线提交比对差异并选择运行时层级，因此仅文档改动会跳过运行时层级，
+而 `kernel/`、`trusted/`、`platform/`、`patches/`、`third_party/`、`user/`、
+运行时构建与测试脚本、`Makefile` 或工作流本身的任何改动仍会运行完整 M8 验收层级。
+手动 `workflow_dispatch` 可在任意版本上强制使用完整层级。层级划分刻意保持粗粒度：
+不提供裁剪版运行时层级，因为部分冒烟与完整 M8 验收无法区分。job 会记录所选层级、
+源码版本、自身冒烟墙钟时间以及恢复出的缓存大小，因此“层级设为必需”所需的缓存、
+运行时长与成本都可以从留存运行中测量。该层级在 Pull Request 上先作为参考性证据运行；
+只有当这些运行显示缓存命中率与冒烟时长可接受后，才应在分支保护中将其设为必需。
 
 `host-tests` job 中的 `make test-host` 只执行 Makefile 中 `test-host` 注册的脚本，
 不会启动 QEMU 或 TAP。M8 job 在 `make m8-build` 之后运行直接的
 `sudo -E make m8-smoke` 才会启动系统，随后运行 `make test-build`。运行时声明必须以
 M8 job 的串口日志、对端统计、冒烟退出状态和上传产物为依据；`make test-build` 是
-构建契约检查，不能替代冒烟验收。
+构建契约检查，不能替代冒烟验收。上传的产物集包含记录被测提交的
+`source-revision.txt`，保留 14 天；job 在上传后删除 `out/m8`。
 
 ## 实施里程碑
 
