@@ -87,6 +87,22 @@ grep -Eq '^run:[[:space:]]*$' "$root/Makefile"
 grep -Fq 'sudo -E $(MAKE) m8-smoke' "$root/Makefile"
 grep -Fq 'make run' "$root/README.md"
 grep -Fq 'make run' "$root/README.zh-CN.md"
+grep -Fq './scripts/m8-run.sh' "$root/Makefile" || {
+  echo 'FAIL: make run must go through the provenance-verifying wrapper' >&2
+  exit 1
+}
+grep -Fq 'm8-manifest.sh' "$root/scripts/m8-build.sh" || {
+  echo 'FAIL: m8-build must record the manifest of the artifacts it produced' >&2
+  exit 1
+}
+grep -Fq 'QS_ALLOW_STALE_ARTIFACT' "$root/scripts/m8-run.sh" || {
+  echo 'FAIL: intentional old-build runs need an explicit option' >&2
+  exit 1
+}
+grep -Fq 'QS_M8_BUILD_IDENTITY' "$root/scripts/m8-run.sh" || {
+  echo 'FAIL: cached runs must label their evidence with the build identity' >&2
+  exit 1
+}
 host_action_refs=$tmp/host-action-refs
 smoke_action_refs=$tmp/smoke-action-refs
 collect_action_refs "$workflow" "$host_action_refs"
