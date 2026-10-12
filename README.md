@@ -218,7 +218,7 @@ artifact-dependent build contract and is not part of host-only testing. Host
 tests do not start QEMU, create a TAP interface, or boot the system; the
 system itself starts through `make run` or `make m8-smoke`.
 
-The `test-host` target contains 86 shell checks: 65 behavior, script, and
+The `test-host` target contains 88 shell checks: 67 behavior, script, and
 runtime checks plus 21 source-contract checks. The separate `test-build`
 target adds one artifact-dependent build contract. These are script counts,
 not claims about individual assertions or QEMU runtime cases.
@@ -314,6 +314,9 @@ flowchart TD
     TAG --> M8["m8-smoke workflow"]
     WEEKLY["Weekly schedule"] --> M8
     MANUAL["Manual dispatch"] --> M8
+    PR["Pull request"] --> PATHS["Classify changed paths"]
+    PATHS --> M8
+    PATHS -->|"documentation only"| SKIP["Skip the runtime tier"]
 
     M8 --> CHECKOUT["Checkout direct submodules"]
     CHECKOUT --> DEPS["Install tools, restore cache, prepare FatFs"]
@@ -329,10 +332,20 @@ flowchart TD
 
 GitHub Actions runs host tests on every push and pull request. The host job is
 host-only and does not establish QEMU, TAP, networking, or PMP evidence. M8
-runs weekly, on manual dispatch, and automatically for every `v*` release tag;
-it is not a full QEMU gate for every branch push or pull request. Tag releases
-therefore have both fast host-test evidence and full QEMU/TAP evidence at the
-exact tagged commit when the M8 job passes.
+runs weekly, on manual dispatch, and automatically for every `v*` release tag.
+Pull requests are added by changed path: `scripts/m8-paths.sh` maps the diff
+against the pull request base to a runtime tier, so a documentation-only change
+skips the runtime tier while any change under `kernel/`, `trusted/`,
+`platform/`, `patches/`, `third_party/`, `user/`, the runtime build and test
+scripts, the `Makefile` or the workflow itself still runs the full M8
+acceptance tier. A manual `workflow_dispatch` can force the full tier on any
+revision. The tier decision is deliberately coarse: no reduced runtime tier
+exists, because a partial smoke is indistinguishable from full M8 acceptance.
+The job records the selected tier, its source revision, its own smoke wall
+time, and the restored cache size, so the cache, runtime and cost of making the
+tier required can be measured from retained runs. The tier is scheduled on pull
+requests as informational evidence; branch protection should require it only
+once those runs show the cache hit rate and smoke duration are acceptable.
 
 The `host-tests` job's `make test-host` command is host-only and runs the
 scripts registered under `test-host`; it never starts QEMU or TAP. The M8 job
@@ -340,7 +353,9 @@ starts the system only after `make m8-build`, by running the direct
 `sudo -E make m8-smoke` target, and then runs `make test-build`. Runtime claims
 must be taken from the M8 job's serial logs, peer statistics, smoke exit status,
 and uploaded artifacts; `make test-build` is a build contract check, not a
-replacement for the smoke run.
+replacement for the smoke run. Each uploaded artifact set carries
+`source-revision.txt` with the tested commit and is retained for 14 days; the
+job removes `out/m8` after upload.
 
 ## Implementation milestones
 
