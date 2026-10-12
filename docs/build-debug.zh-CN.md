@@ -39,6 +39,11 @@ CI 在构建后直接使用 `sudo -E make m8-smoke`。`make run` 要求先由
 `QS_ALLOW_STALE_ARTIFACT=1 make run`；此时运行及其证据会带上
 `QS:M8_BUILD_IDENTITY`，标明实际执行的构建标识。
 
+在 Pull Request 上，CI job 会用 `scripts/m8-paths.sh` 以基线提交比对差异：
+仅文档改动会跳过运行时层级，其他任何改动都运行完整 M8 验收层级。可本地运行
+`git diff --name-only -z "$BASE...$HEAD" | ./scripts/m8-paths.sh` 查看所选层级，
+或手动触发工作流并设置 `force_full`，以在任意变更路径下强制使用完整层级。
+
 冒烟测试会创建 `tap0`、分配 `192.168.100.1/24`、启动本地原始数据包对端，
 并在退出时移除 TAP 设备。测试不使用公网 DNS 或互联网服务。
 
