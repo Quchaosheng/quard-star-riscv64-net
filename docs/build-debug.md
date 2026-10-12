@@ -40,6 +40,13 @@ manifest all stop the run with the reason and a `make m8-build` instruction.
 Use `QS_ALLOW_STALE_ARTIFACT=1 make run` to run an older build on purpose; the
 run and its evidence then carry `QS:M8_BUILD_IDENTITY` naming that build.
 
+On pull requests the CI job classifies the diff against the base commit with
+`scripts/m8-paths.sh`: documentation-only changes skip the runtime tier, and
+every other change runs the full M8 acceptance tier. Run
+`git diff --name-only -z "$BASE...$HEAD" | ./scripts/m8-paths.sh` locally to
+see the selected tier, or start the workflow manually with `force_full` to
+demand the full tier regardless of changed paths.
+
 The smoke test creates `tap0`, assigns `192.168.100.1/24`, starts a local raw-packet peer, and removes the TAP device on exit. It does not use public DNS or Internet services.
 
 ## Logs
